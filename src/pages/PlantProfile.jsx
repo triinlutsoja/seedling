@@ -74,7 +74,7 @@ export default function PlantProfile() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-green-50">
+      <div className="h-full flex items-center justify-center bg-green-50">
         <div className="w-8 h-8 border-2 border-green-600 border-t-transparent rounded-full animate-spin" />
       </div>
     )
@@ -101,7 +101,7 @@ export default function PlantProfile() {
   }
 
   return (
-    <div className="min-h-screen bg-green-50 safe-area-top">
+    <div className="h-full overflow-y-auto bg-green-50 safe-area-top hide-scrollbar">
       {/* Header */}
       <header className="bg-green-600 text-white px-4 pt-4 pb-6">
         <div className="flex items-center justify-between mb-4">
@@ -153,7 +153,7 @@ export default function PlantProfile() {
       </header>
 
       {/* Content */}
-      <div className="px-4 py-4 space-y-4 pb-8">
+      <div className="px-4 py-4 space-y-4 pb-8 safe-area-bottom">
         {/* General Info */}
         <Section title="General Info">
           <div className="space-y-3">

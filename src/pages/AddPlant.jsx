@@ -154,7 +154,7 @@ export default function AddPlant() {
   }
 
   return (
-    <div className="min-h-screen bg-green-50 safe-area-top">
+    <div className="h-full overflow-y-auto bg-green-50 safe-area-top hide-scrollbar">
       {/* Header */}
       <header className="bg-green-600 text-white px-4 pt-4 pb-6">
         <div className="flex items-center justify-between">
@@ -165,7 +165,7 @@ export default function AddPlant() {
       </header>
 
       {/* Form */}
-      <form onSubmit={handleSubmit} className="px-4 py-4 space-y-4 pb-8">
+      <form onSubmit={handleSubmit} className="px-4 py-4 space-y-4 pb-8 safe-area-bottom">
         <FormSection title="Basic Info">
           <Input
             label="Plant Name *"

@@ -181,14 +181,14 @@ export default function EditPlant() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-green-50">
+      <div className="h-full flex items-center justify-center bg-green-50">
         <div className="w-8 h-8 border-2 border-green-600 border-t-transparent rounded-full animate-spin" />
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-green-50 safe-area-top">
+    <div className="h-full overflow-y-auto bg-green-50 safe-area-top hide-scrollbar">
       {/* Header */}
       <header className="bg-green-600 text-white px-4 pt-4 pb-6">
         <div className="flex items-center justify-between">
@@ -199,7 +199,7 @@ export default function EditPlant() {
       </header>
 
       {/* Form */}
-      <form onSubmit={handleSubmit} className="px-4 py-4 space-y-4 pb-8">
+      <form onSubmit={handleSubmit} className="px-4 py-4 space-y-4 pb-8 safe-area-bottom">
         <FormSection title="Basic Info">
           <Input
             label="Plant Name *"

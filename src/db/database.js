@@ -6,7 +6,7 @@ db.version(1).stores({
   plants: '++id, name, status, createdAt',
   diaryEntries: '++id, plantId, date, careStage, year',
   reminders: '++id, plantId, date, completed',
-  photos: '++id, plantId, diaryEntryId, createdAt'
+  photos: '++id, plantId, diaryEntryId, createdAt, isMainPhoto'
 });
 
 // Plant status constants

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { db, PlantStatus, CareStages, Months } from '../db/database'
 import { format } from 'date-fns'
+import PhotoGallery from '../components/PhotoGallery'
 
 function BackButton({ onClick }) {
   return (
@@ -32,6 +33,9 @@ export default function PlantProfile() {
   const [entryPhotos, setEntryPhotos] = useState({}) // { entryId: [photo, ...] }
   const [reminders, setReminders] = useState([])
   const [loading, setLoading] = useState(true)
+  const [mainPhoto, setMainPhoto] = useState(null)
+  const [showGallery, setShowGallery] = useState(false)
+  const [totalPhotos, setTotalPhotos] = useState(0)
 
   // Diary entry form state
   const [showEntryForm, setShowEntryForm] = useState(false)
@@ -68,11 +72,18 @@ export default function PlantProfile() {
         .equals(parseInt(id))
         .toArray()
       const photosByEntry = photos.reduce((acc, photo) => {
-        if (!acc[photo.diaryEntryId]) acc[photo.diaryEntryId] = []
-        acc[photo.diaryEntryId].push(photo)
+        if (photo.diaryEntryId) {
+          if (!acc[photo.diaryEntryId]) acc[photo.diaryEntryId] = []
+          acc[photo.diaryEntryId].push(photo)
+        }
         return acc
       }, {})
       setEntryPhotos(photosByEntry)
+      setTotalPhotos(photos.length)
+
+      // Find the main photo
+      const main = photos.find(p => p.isMainPhoto === true)
+      setMainPhoto(main || null)
 
       // Load reminders
       const plantReminders = await db.reminders
@@ -200,15 +211,28 @@ export default function PlantProfile() {
 
         {/* Plant photo */}
         <div className="flex items-center gap-4">
-          <div className="w-20 h-20 rounded-xl bg-green-500 flex items-center justify-center overflow-hidden flex-shrink-0">
-            {plant.photoUrl ? (
+          <button
+            onClick={() => totalPhotos > 0 && setShowGallery(true)}
+            className={`w-20 h-20 rounded-xl bg-green-500 flex items-center justify-center overflow-hidden flex-shrink-0 relative ${totalPhotos > 0 ? 'cursor-pointer' : 'cursor-default'}`}
+          >
+            {mainPhoto ? (
+              <img src={mainPhoto.dataUrl} alt={plant.name} className="w-full h-full object-cover" />
+            ) : plant.photoUrl ? (
               <img src={plant.photoUrl} alt={plant.name} className="w-full h-full object-cover" />
             ) : (
               <svg className="w-10 h-10 text-green-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
               </svg>
             )}
-          </div>
+            {totalPhotos > 0 && (
+              <div className="absolute bottom-1 right-1 bg-black/50 rounded-full px-1.5 py-0.5 flex items-center gap-0.5">
+                <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                <span className="text-white text-xs font-medium">{totalPhotos}</span>
+              </div>
+            )}
+          </button>
           <div>
             <h1 className="text-2xl font-bold">{plant.name}</h1>
             <div className="flex items-center gap-2 mt-1">
@@ -424,6 +448,16 @@ export default function PlantProfile() {
           </div>
         </div>
       </div>
+
+      {/* Photo Gallery Modal */}
+      <PhotoGallery
+        plantId={id}
+        isOpen={showGallery}
+        onClose={() => {
+          setShowGallery(false)
+          loadPlant() // Refresh to get updated main photo
+        }}
+      />
     </div>
   )
 }

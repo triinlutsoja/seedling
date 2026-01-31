@@ -1,3 +1,5 @@
+This was the original first prompt I gave to Claude Code. I am only saving this for historical purposes. This is not a final blueprint for the project. Over time needs might evolve and this document can become outdated. Don't rely on the instructions given here.
+
 # The initial original prompt
 I want to build a PWA (Progressive Web App) garden planning app for my iPhone that helps me track plants, plan seasons, and remember what I did in previous years.                                                                 
   

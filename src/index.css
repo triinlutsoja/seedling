@@ -61,3 +61,17 @@ body {
 .transition-default {
   transition: all 0.2s ease-in-out;
 }
+
+/* Additional z-index for nested modals */
+.z-60 {
+  z-index: 60;
+}
+
+/* Safe area for modal headers/footers */
+.pt-safe {
+  padding-top: var(--safe-area-inset-top);
+}
+
+.pb-safe {
+  padding-bottom: var(--safe-area-inset-bottom);
+}

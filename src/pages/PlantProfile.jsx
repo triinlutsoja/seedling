@@ -29,8 +29,17 @@ export default function PlantProfile() {
   const navigate = useNavigate()
   const [plant, setPlant] = useState(null)
   const [diaryEntries, setDiaryEntries] = useState([])
+  const [entryPhotos, setEntryPhotos] = useState({}) // { entryId: [photo, ...] }
   const [reminders, setReminders] = useState([])
   const [loading, setLoading] = useState(true)
+
+  // Diary entry form state
+  const [showEntryForm, setShowEntryForm] = useState(false)
+  const [entryDate, setEntryDate] = useState(() => new Date().toISOString().split('T')[0])
+  const [entryCareStage, setEntryCareStage] = useState('')
+  const [entryNote, setEntryNote] = useState('')
+  const [newPhotos, setNewPhotos] = useState([])
+  const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     loadPlant()
@@ -53,6 +62,18 @@ export default function PlantProfile() {
       entries.sort((a, b) => new Date(b.date) - new Date(a.date))
       setDiaryEntries(entries)
 
+      // Load photos for entries
+      const photos = await db.photos
+        .where('plantId')
+        .equals(parseInt(id))
+        .toArray()
+      const photosByEntry = photos.reduce((acc, photo) => {
+        if (!acc[photo.diaryEntryId]) acc[photo.diaryEntryId] = []
+        acc[photo.diaryEntryId].push(photo)
+        return acc
+      }, {})
+      setEntryPhotos(photosByEntry)
+
       // Load reminders
       const plantReminders = await db.reminders
         .where('plantId')
@@ -70,6 +91,60 @@ export default function PlantProfile() {
     const newStatus = plant.status === PlantStatus.ACTIVE ? PlantStatus.ARCHIVED : PlantStatus.ACTIVE
     await db.plants.update(plant.id, { status: newStatus })
     setPlant({ ...plant, status: newStatus })
+  }
+
+  function handlePhotoSelect(e) {
+    const files = Array.from(e.target.files)
+    files.forEach(file => {
+      const reader = new FileReader()
+      reader.onload = (event) => {
+        setNewPhotos(prev => [...prev, event.target.result])
+      }
+      reader.readAsDataURL(file)
+    })
+    e.target.value = '' // Reset input
+  }
+
+  function removeNewPhoto(index) {
+    setNewPhotos(prev => prev.filter((_, i) => i !== index))
+  }
+
+  function resetEntryForm() {
+    setShowEntryForm(false)
+    setEntryDate(new Date().toISOString().split('T')[0])
+    setEntryCareStage('')
+    setEntryNote('')
+    setNewPhotos([])
+  }
+
+  async function handleSaveEntry() {
+    setSaving(true)
+    try {
+      const entryId = await db.diaryEntries.add({
+        plantId: parseInt(id),
+        date: entryDate,
+        careStage: entryCareStage || null,
+        note: entryNote.trim() || null,
+        year: new Date(entryDate).getFullYear()
+      })
+
+      // Save photos linked to this entry
+      for (const dataUrl of newPhotos) {
+        await db.photos.add({
+          plantId: parseInt(id),
+          diaryEntryId: entryId,
+          dataUrl,
+          createdAt: new Date().toISOString()
+        })
+      }
+
+      // Refresh entries and reset form
+      await loadPlant()
+      resetEntryForm()
+    } catch (error) {
+      console.error('Error saving diary entry:', error)
+    }
+    setSaving(false)
   }
 
   if (loading) {
@@ -203,41 +278,151 @@ export default function PlantProfile() {
         )}
 
         {/* Diary */}
-        <Section title="Diary">
-          {diaryEntries.length === 0 ? (
-            <p className="text-gray-400 text-center py-4">No diary entries yet</p>
-          ) : (
-            <div className="space-y-4">
-              {years.map(year => (
-                <div key={year}>
-                  <h3 className="text-sm font-semibold text-gray-500 mb-2">{year}</h3>
-                  <div className="space-y-2">
-                    {entriesByYear[year].map(entry => {
-                      const stage = CareStages.find(s => s.id === entry.careStage)
-                      return (
-                        <div key={entry.id} className="p-3 bg-gray-50 rounded-lg">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="text-xs text-gray-500">
-                              {format(new Date(entry.date), 'MMM d')}
-                            </span>
-                            {stage && (
-                              <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs">
-                                {stage.label}
-                              </span>
-                            )}
-                          </div>
-                          {entry.note && (
-                            <p className="text-gray-700 text-sm">{entry.note}</p>
-                          )}
-                        </div>
-                      )
-                    })}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+            <h2 className="font-semibold text-gray-900">Diary</h2>
+            <button
+              onClick={() => setShowEntryForm(!showEntryForm)}
+              className="p-1 touch-feedback rounded-full hover:bg-gray-100"
+            >
+              <svg className={`w-6 h-6 text-green-600 transition-transform ${showEntryForm ? 'rotate-45' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+            </button>
+          </div>
+          <div className="p-4">
+            {/* New Entry Form */}
+            {showEntryForm && (
+              <div className="mb-4 p-4 bg-green-50 rounded-lg border border-green-100 space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+                  <input
+                    type="date"
+                    value={entryDate}
+                    onChange={(e) => setEntryDate(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Care Stage (optional)</label>
+                  <select
+                    value={entryCareStage}
+                    onChange={(e) => setEntryCareStage(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white"
+                  >
+                    <option value="">General note</option>
+                    {CareStages.map(stage => (
+                      <option key={stage.id} value={stage.id}>{stage.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Note (optional)</label>
+                  <textarea
+                    value={entryNote}
+                    onChange={(e) => setEntryNote(e.target.value)}
+                    placeholder="Add notes about this entry..."
+                    rows={3}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent resize-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Photos (optional)</label>
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    {newPhotos.map((photo, index) => (
+                      <div key={index} className="relative w-16 h-16">
+                        <img src={photo} alt="" className="w-full h-full object-cover rounded-lg" />
+                        <button
+                          onClick={() => removeNewPhoto(index)}
+                          className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center text-xs"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                    <label className="w-16 h-16 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center cursor-pointer hover:border-green-500 hover:bg-green-50 transition-colors">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        onChange={handlePhotoSelect}
+                        className="hidden"
+                        multiple
+                      />
+                      <svg className="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
+                    </label>
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
-        </Section>
+                <div className="flex gap-2">
+                  <button
+                    onClick={resetEntryForm}
+                    className="flex-1 py-2 px-4 border border-gray-300 rounded-lg text-gray-700 font-medium touch-feedback"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSaveEntry}
+                    disabled={saving}
+                    className="flex-1 py-2 px-4 bg-green-600 text-white rounded-lg font-medium touch-feedback disabled:opacity-50"
+                  >
+                    {saving ? 'Saving...' : 'Save Entry'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Diary Entries List */}
+            {diaryEntries.length === 0 && !showEntryForm ? (
+              <p className="text-gray-400 text-center py-4">No diary entries yet</p>
+            ) : diaryEntries.length > 0 && (
+              <div className="space-y-4">
+                {years.map(year => (
+                  <div key={year}>
+                    <h3 className="text-sm font-semibold text-gray-500 mb-2">{year}</h3>
+                    <div className="space-y-2">
+                      {entriesByYear[year].map(entry => {
+                        const stage = CareStages.find(s => s.id === entry.careStage)
+                        const photos = entryPhotos[entry.id] || []
+                        return (
+                          <div key={entry.id} className="p-3 bg-gray-50 rounded-lg">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-xs text-gray-500">
+                                {format(new Date(entry.date), 'MMM d')}
+                              </span>
+                              {stage && (
+                                <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs">
+                                  {stage.label}
+                                </span>
+                              )}
+                            </div>
+                            {entry.note && (
+                              <p className="text-gray-700 text-sm">{entry.note}</p>
+                            )}
+                            {photos.length > 0 && (
+                              <div className="flex flex-wrap gap-2 mt-2">
+                                {photos.map(photo => (
+                                  <img
+                                    key={photo.id}
+                                    src={photo.dataUrl}
+                                    alt=""
+                                    className="w-16 h-16 object-cover rounded-lg"
+                                  />
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   )

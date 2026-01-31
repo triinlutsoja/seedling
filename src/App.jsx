@@ -14,10 +14,10 @@ function App() {
         <Route index element={<MyGarden />} />
         <Route path="calendars" element={<Calendars />} />
         <Route path="todo" element={<ToDo />} />
+        <Route path="plant/:id" element={<PlantProfile />} />
+        <Route path="plant/new" element={<AddPlant />} />
+        <Route path="plant/:id/edit" element={<EditPlant />} />
       </Route>
-      <Route path="/plant/:id" element={<PlantProfile />} />
-      <Route path="/plant/new" element={<AddPlant />} />
-      <Route path="/plant/:id/edit" element={<EditPlant />} />
     </Routes>
   )
 }

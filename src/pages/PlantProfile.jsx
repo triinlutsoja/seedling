@@ -105,7 +105,7 @@ export default function PlantProfile() {
       {/* Header */}
       <header className="bg-green-600 text-white px-4 pt-4 pb-6">
         <div className="flex items-center justify-between mb-4">
-          <BackButton onClick={() => navigate(-1)} />
+          <BackButton onClick={() => navigate('/')} />
           <div className="flex items-center gap-2">
             <Link
               to={`/plant/${id}/edit`}
@@ -153,7 +153,7 @@ export default function PlantProfile() {
       </header>
 
       {/* Content */}
-      <div className="px-4 py-4 space-y-4 pb-8 safe-area-bottom">
+      <div className="px-4 py-4 space-y-4 pb-8">
         {/* General Info */}
         <Section title="General Info">
           <div className="space-y-3">

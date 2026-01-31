@@ -158,14 +158,14 @@ export default function AddPlant() {
       {/* Header */}
       <header className="bg-green-600 text-white px-4 pt-4 pb-6">
         <div className="flex items-center justify-between">
-          <BackButton onClick={() => navigate(-1)} />
+          <BackButton onClick={() => navigate('/')} />
           <h1 className="text-lg font-semibold">Add New Plant</h1>
           <div className="w-10" /> {/* Spacer */}
         </div>
       </header>
 
       {/* Form */}
-      <form onSubmit={handleSubmit} className="px-4 py-4 space-y-4 pb-8 safe-area-bottom">
+      <form onSubmit={handleSubmit} className="px-4 py-4 space-y-4 pb-8">
         <FormSection title="Basic Info">
           <Input
             label="Plant Name *"

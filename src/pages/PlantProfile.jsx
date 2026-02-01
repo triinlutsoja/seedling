@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { db, PlantStatus, CareStages, Months } from '../db/database'
-import { format } from 'date-fns'
+import { format, isToday, isPast } from 'date-fns'
 import PhotoGallery from '../components/PhotoGallery'
+import TaskFormModal from '../components/TaskFormModal'
+import { scheduleNotification, cancelNotification } from '../utils/notifications'
 
 function BackButton({ onClick }) {
   return (
@@ -25,13 +27,21 @@ function Section({ title, children }) {
   )
 }
 
+function CheckIcon() {
+  return (
+    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+    </svg>
+  )
+}
+
 export default function PlantProfile() {
   const { id } = useParams()
   const navigate = useNavigate()
   const [plant, setPlant] = useState(null)
   const [diaryEntries, setDiaryEntries] = useState([])
-  const [entryPhotos, setEntryPhotos] = useState({}) // { entryId: [photo, ...] }
-  const [reminders, setReminders] = useState([])
+  const [entryPhotos, setEntryPhotos] = useState({})
+  const [tasks, setTasks] = useState([])
   const [loading, setLoading] = useState(true)
   const [mainPhoto, setMainPhoto] = useState(null)
   const [showGallery, setShowGallery] = useState(false)
@@ -44,6 +54,10 @@ export default function PlantProfile() {
   const [entryNote, setEntryNote] = useState('')
   const [newPhotos, setNewPhotos] = useState([])
   const [saving, setSaving] = useState(false)
+
+  // Task modal state
+  const [taskModalOpen, setTaskModalOpen] = useState(false)
+  const [editingTask, setEditingTask] = useState(null)
 
   useEffect(() => {
     loadPlant()
@@ -85,13 +99,15 @@ export default function PlantProfile() {
       const main = photos.find(p => p.isMainPhoto === true)
       setMainPhoto(main || null)
 
-      // Load reminders
-      const plantReminders = await db.reminders
-        .where('plantId')
+      // Load tasks for this plant using multiEntry index
+      const plantTasks = await db.tasks
+        .where('plantIds')
         .equals(parseInt(id))
         .toArray()
-      plantReminders.sort((a, b) => new Date(a.date) - new Date(b.date))
-      setReminders(plantReminders)
+      // Filter incomplete and sort by date
+      const incompleteTasks = plantTasks.filter(t => t.completed === 0)
+      incompleteTasks.sort((a, b) => new Date(a.date) - new Date(b.date))
+      setTasks(incompleteTasks)
     } catch (error) {
       console.error('Error loading plant:', error)
     }
@@ -113,7 +129,7 @@ export default function PlantProfile() {
       }
       reader.readAsDataURL(file)
     })
-    e.target.value = '' // Reset input
+    e.target.value = ''
   }
 
   function removeNewPhoto(index) {
@@ -139,7 +155,6 @@ export default function PlantProfile() {
         year: new Date(entryDate).getFullYear()
       })
 
-      // Save photos linked to this entry
       for (const dataUrl of newPhotos) {
         await db.photos.add({
           plantId: parseInt(id),
@@ -149,13 +164,106 @@ export default function PlantProfile() {
         })
       }
 
-      // Refresh entries and reset form
       await loadPlant()
       resetEntryForm()
     } catch (error) {
       console.error('Error saving diary entry:', error)
     }
     setSaving(false)
+  }
+
+  async function handleCompleteTask(taskId) {
+    try {
+      const task = await db.tasks.get(taskId)
+      if (!task) return
+
+      // Create diary entry for this plant
+      await db.diaryEntries.add({
+        plantId: parseInt(id),
+        date: new Date().toISOString().split('T')[0],
+        careStage: 'task_completed',
+        note: task.description,
+        year: new Date().getFullYear()
+      })
+
+      // If task is only linked to this plant, mark as completed
+      // Otherwise, just remove this plant from the task's plantIds
+      if (task.plantIds.length === 1) {
+        await db.tasks.update(taskId, { completed: 1 })
+        cancelNotification(taskId)
+      } else {
+        // Remove this plant from the task
+        const newPlantIds = task.plantIds.filter(pid => pid !== parseInt(id))
+        await db.tasks.update(taskId, { plantIds: newPlantIds })
+      }
+
+      await loadPlant()
+    } catch (error) {
+      console.error('Error completing task:', error)
+    }
+  }
+
+  function handleEditTask(task) {
+    setEditingTask(task)
+    setTaskModalOpen(true)
+  }
+
+  function handleOpenCreateTask() {
+    setEditingTask(null)
+    setTaskModalOpen(true)
+  }
+
+  function handleCloseTaskModal() {
+    setTaskModalOpen(false)
+    setEditingTask(null)
+  }
+
+  async function handleSaveTask(taskData) {
+    try {
+      if (taskData.id) {
+        await db.tasks.update(taskData.id, {
+          description: taskData.description,
+          date: taskData.date,
+          time: taskData.time,
+          plantIds: taskData.plantIds
+        })
+
+        if (taskData.time) {
+          scheduleNotification(taskData)
+        } else {
+          cancelNotification(taskData.id)
+        }
+      } else {
+        const newId = await db.tasks.add({
+          description: taskData.description,
+          date: taskData.date,
+          time: taskData.time,
+          plantIds: taskData.plantIds,
+          completed: 0,
+          createdAt: new Date().toISOString()
+        })
+
+        if (taskData.time) {
+          scheduleNotification({ ...taskData, id: newId })
+        }
+      }
+
+      await loadPlant()
+    } catch (error) {
+      console.error('Error saving task:', error)
+      throw error
+    }
+  }
+
+  async function handleDeleteTask(taskId) {
+    try {
+      await db.tasks.delete(taskId)
+      cancelNotification(taskId)
+      await loadPlant()
+    } catch (error) {
+      console.error('Error deleting task:', error)
+      throw error
+    }
   }
 
   if (loading) {
@@ -177,9 +285,6 @@ export default function PlantProfile() {
   }, {})
 
   const years = Object.keys(entriesByYear).sort((a, b) => b - a)
-
-  // Get upcoming reminders (not completed)
-  const upcomingReminders = reminders.filter(r => !r.completed)
 
   const formatPeriod = (period) => {
     if (!period || period.start === undefined) return 'Not set'
@@ -282,24 +387,65 @@ export default function PlantProfile() {
           </Section>
         )}
 
-        {/* Upcoming Reminders */}
-        {upcomingReminders.length > 0 && (
-          <Section title="Upcoming Reminders">
-            <div className="space-y-2">
-              {upcomingReminders.map(reminder => (
-                <div key={reminder.id} className="flex items-center gap-3 p-2 bg-amber-50 rounded-lg">
-                  <svg className="w-5 h-5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <div className="flex-1">
-                    <p className="text-gray-900 text-sm">{reminder.description}</p>
-                    <p className="text-gray-500 text-xs">{format(new Date(reminder.date), 'MMM d, yyyy')}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </Section>
-        )}
+        {/* To-Do Section */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+            <h2 className="font-semibold text-gray-900">To-Do</h2>
+            <button
+              onClick={handleOpenCreateTask}
+              className="p-1 touch-feedback rounded-full hover:bg-gray-100"
+            >
+              <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+            </button>
+          </div>
+          <div className="p-4">
+            {tasks.length === 0 ? (
+              <p className="text-gray-400 text-center py-2">No pending tasks</p>
+            ) : (
+              <div className="space-y-2">
+                {tasks.map(task => {
+                  const date = new Date(task.date)
+                  let isOverdue = isPast(date) && !isToday(date)
+                  if (task.time && isToday(date)) {
+                    const taskDateTime = new Date(`${task.date}T${task.time}`)
+                    isOverdue = isPast(taskDateTime)
+                  }
+                  let dateLabel = format(date, 'MMM d, yyyy')
+                  if (isToday(date)) dateLabel = 'Today'
+
+                  return (
+                    <div
+                      key={task.id}
+                      className={`flex items-start gap-3 p-3 rounded-lg cursor-pointer active:bg-gray-100 ${isOverdue ? 'bg-red-50' : 'bg-gray-50'}`}
+                      onClick={() => handleEditTask(task)}
+                    >
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleCompleteTask(task.id)
+                        }}
+                        className="mt-0.5 w-5 h-5 rounded-full border-2 border-green-500 flex-shrink-0 flex items-center justify-center hover:bg-green-50"
+                      >
+                        {task.completed === 1 && <CheckIcon />}
+                      </button>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-gray-900 text-sm font-medium">{task.description}</p>
+                        {task.time && (
+                          <span className={`text-xs ${isOverdue ? 'text-red-500' : 'text-gray-400'}`}>at {task.time}</span>
+                        )}
+                      </div>
+                      <span className={`text-xs font-medium ${isOverdue ? 'text-red-500' : 'text-gray-500'}`}>
+                        {dateLabel}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </div>
 
         {/* Diary */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
@@ -335,7 +481,7 @@ export default function PlantProfile() {
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white"
                   >
                     <option value="">General note</option>
-                    {CareStages.map(stage => (
+                    {CareStages.filter(s => s.id !== 'task_completed').map(stage => (
                       <option key={stage.id} value={stage.id}>{stage.label}</option>
                     ))}
                   </select>
@@ -417,7 +563,11 @@ export default function PlantProfile() {
                                 {format(new Date(entry.date), 'MMM d')}
                               </span>
                               {stage && (
-                                <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs">
+                                <span className={`px-2 py-0.5 rounded-full text-xs ${
+                                  stage.id === 'task_completed'
+                                    ? 'bg-blue-100 text-blue-700'
+                                    : 'bg-green-100 text-green-700'
+                                }`}>
                                   {stage.label}
                                 </span>
                               )}
@@ -455,8 +605,19 @@ export default function PlantProfile() {
         isOpen={showGallery}
         onClose={() => {
           setShowGallery(false)
-          loadPlant() // Refresh to get updated main photo
+          loadPlant()
         }}
+      />
+
+      {/* Task Form Modal */}
+      <TaskFormModal
+        isOpen={taskModalOpen}
+        onClose={handleCloseTaskModal}
+        onSave={handleSaveTask}
+        onDelete={handleDeleteTask}
+        mode={editingTask ? 'edit' : 'create'}
+        initialData={editingTask}
+        preSelectedPlantId={parseInt(id)}
       />
     </div>
   )

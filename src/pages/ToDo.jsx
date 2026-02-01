@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
-import { Link } from 'react-router-dom'
 import { db } from '../db/database'
-import { format, isToday, isTomorrow, isPast, isFuture } from 'date-fns'
+import TaskCard from '../components/TaskCard'
+import TaskFormModal from '../components/TaskFormModal'
+import { scheduleNotification, cancelNotification, rescheduleAllNotifications } from '../utils/notifications'
 
 function CalendarViewIcon({ active }) {
   return (
@@ -19,54 +20,11 @@ function ListViewIcon({ active }) {
   )
 }
 
-function ReminderCard({ reminder, plant, onComplete, onSnooze }) {
-  const date = new Date(reminder.date)
-  const isOverdue = isPast(date) && !isToday(date)
-
-  let dateLabel = format(date, 'MMM d, yyyy')
-  if (isToday(date)) dateLabel = 'Today'
-  if (isTomorrow(date)) dateLabel = 'Tomorrow'
-
+function PlusIcon() {
   return (
-    <div className={`bg-white rounded-xl p-4 shadow-sm border ${isOverdue ? 'border-red-200' : 'border-gray-100'}`}>
-      <div className="flex items-start gap-3">
-        {/* Checkbox */}
-        <button
-          onClick={() => onComplete(reminder.id)}
-          className="mt-0.5 w-6 h-6 rounded-full border-2 border-green-500 flex-shrink-0 flex items-center justify-center touch-feedback hover:bg-green-50"
-        >
-          {reminder.completed && (
-            <svg className="w-4 h-4 text-green-500" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-            </svg>
-          )}
-        </button>
-
-        <div className="flex-1 min-w-0">
-          <p className="text-gray-900 font-medium">{reminder.description}</p>
-          <Link
-            to={`/plant/${reminder.plantId}`}
-            className="text-sm text-green-600 hover:underline"
-          >
-            {plant?.name || 'Unknown plant'}
-          </Link>
-        </div>
-
-        <div className="text-right flex-shrink-0">
-          <span className={`text-sm font-medium ${isOverdue ? 'text-red-500' : isToday(date) ? 'text-green-600' : 'text-gray-500'}`}>
-            {dateLabel}
-          </span>
-          {isToday(date) && (
-            <button
-              onClick={() => onSnooze(reminder.id)}
-              className="block text-xs text-gray-400 hover:text-gray-600 mt-1"
-            >
-              Snooze
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
+    <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+    </svg>
   )
 }
 
@@ -78,65 +36,157 @@ function EmptyState() {
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
         </svg>
       </div>
-      <h3 className="text-lg font-semibold text-gray-900 mb-1">No reminders</h3>
-      <p className="text-gray-500">Add reminders to your plants to track tasks</p>
+      <h3 className="text-lg font-semibold text-gray-900 mb-1">No tasks</h3>
+      <p className="text-gray-500">Tap the + button to add a task</p>
     </div>
   )
 }
 
 export default function ToDo() {
-  const [viewMode, setViewMode] = useState('list') // 'list' or 'calendar'
-  const [reminders, setReminders] = useState([])
+  const [viewMode, setViewMode] = useState('list')
+  const [tasks, setTasks] = useState([])
   const [plants, setPlants] = useState({})
   const [loading, setLoading] = useState(true)
+  const [modalOpen, setModalOpen] = useState(false)
+  const [editingTask, setEditingTask] = useState(null)
 
   useEffect(() => {
-    loadReminders()
+    loadTasks()
   }, [])
 
-  async function loadReminders() {
+  async function loadTasks() {
     try {
-      // Get incomplete reminders sorted by date
-      const allReminders = await db.reminders
+      // Get incomplete tasks sorted by date
+      const allTasks = await db.tasks
         .where('completed')
         .equals(0)
         .toArray()
 
       // Sort by date (nearest first)
-      allReminders.sort((a, b) => new Date(a.date) - new Date(b.date))
+      allTasks.sort((a, b) => new Date(a.date) - new Date(b.date))
 
-      // Get plant info for each reminder
-      const plantIds = [...new Set(allReminders.map(r => r.plantId))]
+      // Get all unique plant IDs from tasks
+      const plantIds = [...new Set(allTasks.flatMap(t => t.plantIds || []))]
       const plantsData = await db.plants.where('id').anyOf(plantIds).toArray()
       const plantsMap = {}
       plantsData.forEach(p => { plantsMap[p.id] = p })
 
-      setReminders(allReminders)
+      setTasks(allTasks)
       setPlants(plantsMap)
+
+      // Reschedule notifications for all tasks
+      rescheduleAllNotifications(allTasks)
     } catch (error) {
-      console.error('Error loading reminders:', error)
+      console.error('Error loading tasks:', error)
     }
     setLoading(false)
   }
 
-  async function handleComplete(reminderId) {
+  async function handleComplete(taskId) {
     try {
-      await db.reminders.update(reminderId, { completed: 1 })
-      setReminders(reminders.filter(r => r.id !== reminderId))
+      const task = await db.tasks.get(taskId)
+      if (!task) return
+
+      // Create diary entry for each linked plant
+      for (const plantId of (task.plantIds || [])) {
+        await db.diaryEntries.add({
+          plantId,
+          date: new Date().toISOString().split('T')[0],
+          careStage: 'task_completed',
+          note: task.description,
+          year: new Date().getFullYear()
+        })
+      }
+
+      // Mark task as completed
+      await db.tasks.update(taskId, { completed: 1 })
+
+      // Cancel any scheduled notification
+      cancelNotification(taskId)
+
+      // Remove from state
+      setTasks(tasks.filter(t => t.id !== taskId))
     } catch (error) {
-      console.error('Error completing reminder:', error)
+      console.error('Error completing task:', error)
     }
   }
 
-  async function handleSnooze(reminderId) {
+  async function handleSnooze(taskId) {
     try {
       const tomorrow = new Date()
       tomorrow.setDate(tomorrow.getDate() + 1)
-      await db.reminders.update(reminderId, { date: tomorrow.toISOString().split('T')[0] })
-      loadReminders()
+      await db.tasks.update(taskId, { date: tomorrow.toISOString().split('T')[0] })
+      loadTasks()
     } catch (error) {
-      console.error('Error snoozing reminder:', error)
+      console.error('Error snoozing task:', error)
     }
+  }
+
+  async function handleSaveTask(taskData) {
+    try {
+      if (taskData.id) {
+        // Update existing task
+        await db.tasks.update(taskData.id, {
+          description: taskData.description,
+          date: taskData.date,
+          time: taskData.time,
+          plantIds: taskData.plantIds
+        })
+
+        // Reschedule notification
+        if (taskData.time) {
+          scheduleNotification(taskData)
+        } else {
+          cancelNotification(taskData.id)
+        }
+      } else {
+        // Create new task
+        const id = await db.tasks.add({
+          description: taskData.description,
+          date: taskData.date,
+          time: taskData.time,
+          plantIds: taskData.plantIds,
+          completed: 0,
+          createdAt: new Date().toISOString()
+        })
+
+        // Schedule notification if time is set
+        if (taskData.time) {
+          scheduleNotification({ ...taskData, id })
+        }
+      }
+
+      loadTasks()
+    } catch (error) {
+      console.error('Error saving task:', error)
+      throw error
+    }
+  }
+
+  async function handleDeleteTask(taskId) {
+    try {
+      await db.tasks.delete(taskId)
+      cancelNotification(taskId)
+      loadTasks()
+    } catch (error) {
+      console.error('Error deleting task:', error)
+      throw error
+    }
+  }
+
+  function handleEditTask(task) {
+    setEditingTask(task)
+    setModalOpen(true)
+  }
+
+  function handleOpenCreate() {
+    setEditingTask(null)
+    setModalOpen(true)
+  }
+
+  function handleCloseModal() {
+    setModalOpen(false)
+    setEditingTask(null)
   }
 
   if (loading) {
@@ -171,22 +221,23 @@ export default function ToDo() {
           </div>
         </div>
         <p className="text-green-100 text-sm">
-          {reminders.length} {reminders.length === 1 ? 'reminder' : 'reminders'} pending
+          {tasks.length} {tasks.length === 1 ? 'task' : 'tasks'} pending
         </p>
       </header>
 
       {/* Content */}
       <div className="px-4 -mt-2">
-        {reminders.length === 0 ? (
+        {tasks.length === 0 ? (
           <EmptyState />
         ) : viewMode === 'list' ? (
           <div className="space-y-3">
-            {reminders.map(reminder => (
-              <ReminderCard
-                key={reminder.id}
-                reminder={reminder}
-                plant={plants[reminder.plantId]}
+            {tasks.map(task => (
+              <TaskCard
+                key={task.id}
+                task={task}
+                plants={plants}
                 onComplete={handleComplete}
+                onEdit={handleEditTask}
                 onSnooze={handleSnooze}
               />
             ))}
@@ -197,6 +248,25 @@ export default function ToDo() {
           </div>
         )}
       </div>
+
+      {/* Floating Add Button */}
+      <button
+        onClick={handleOpenCreate}
+        className="fixed bottom-20 right-4 w-14 h-14 bg-green-600 text-white rounded-full shadow-lg flex items-center justify-center touch-feedback z-10"
+        style={{ marginBottom: 'env(safe-area-inset-bottom)' }}
+      >
+        <PlusIcon />
+      </button>
+
+      {/* Task Form Modal */}
+      <TaskFormModal
+        isOpen={modalOpen}
+        onClose={handleCloseModal}
+        onSave={handleSaveTask}
+        onDelete={handleDeleteTask}
+        mode={editingTask ? 'edit' : 'create'}
+        initialData={editingTask}
+      />
     </div>
   )
 }

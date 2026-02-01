@@ -5,7 +5,7 @@ export const db = new Dexie('SeedlingDB');
 db.version(1).stores({
   plants: '++id, name, status, createdAt',
   diaryEntries: '++id, plantId, date, careStage, year',
-  reminders: '++id, plantId, date, completed',
+  tasks: '++id, *plantIds, date, time, completed',
   photos: '++id, plantId, diaryEntryId, createdAt, isMainPhoto'
 });
 
@@ -25,7 +25,8 @@ export const CareStages = [
   { id: 'pruned', label: 'Pruned/Trimmed' },
   { id: 'treated', label: 'Treated (pests/disease)' },
   { id: 'harvested', label: 'Harvested' },
-  { id: 'seeds_collected', label: 'Seeds Collected' }
+  { id: 'seeds_collected', label: 'Seeds Collected' },
+  { id: 'task_completed', label: 'Task Completed' }
 ];
 
 // Month names for calendars

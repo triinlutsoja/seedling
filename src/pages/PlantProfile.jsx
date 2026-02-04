@@ -58,6 +58,7 @@ export default function PlantProfile() {
   // Task modal state
   const [taskModalOpen, setTaskModalOpen] = useState(false)
   const [editingTask, setEditingTask] = useState(null)
+  const [editingDiaryEntryId, setEditingDiaryEntryId] = useState(null)
 
   useEffect(() => {
     loadPlant()
@@ -183,18 +184,19 @@ export default function PlantProfile() {
         date: new Date().toISOString().split('T')[0],
         careStage: 'task_completed',
         note: task.description,
-        year: new Date().getFullYear()
+        year: new Date().getFullYear(),
+        taskId: taskId
       })
 
       // If task is only linked to this plant, mark as completed
-      // Otherwise, just remove this plant from the task's plantIds
+      // Otherwise, remove this plant from plantIds and track in completedPlantIds
       if (task.plantIds.length === 1) {
         await db.tasks.update(taskId, { completed: 1 })
         cancelNotification(taskId)
       } else {
-        // Remove this plant from the task
         const newPlantIds = task.plantIds.filter(pid => pid !== parseInt(id))
-        await db.tasks.update(taskId, { plantIds: newPlantIds })
+        const completedPlantIds = [...(task.completedPlantIds || []), parseInt(id)]
+        await db.tasks.update(taskId, { plantIds: newPlantIds, completedPlantIds })
       }
 
       await loadPlant()
@@ -216,6 +218,7 @@ export default function PlantProfile() {
   function handleCloseTaskModal() {
     setTaskModalOpen(false)
     setEditingTask(null)
+    setEditingDiaryEntryId(null)
   }
 
   async function handleSaveTask(taskData) {
@@ -227,6 +230,16 @@ export default function PlantProfile() {
           time: taskData.time,
           plantIds: taskData.plantIds
         })
+
+        // Sync description to all diary entries linked to this task
+        const linkedEntries = await db.diaryEntries
+          .where('careStage')
+          .equals('task_completed')
+          .filter(e => e.taskId === taskData.id)
+          .toArray()
+        for (const entry of linkedEntries) {
+          await db.diaryEntries.update(entry.id, { note: taskData.description })
+        }
 
         if (taskData.time) {
           scheduleNotification(taskData)
@@ -262,6 +275,57 @@ export default function PlantProfile() {
       await loadPlant()
     } catch (error) {
       console.error('Error deleting task:', error)
+      throw error
+    }
+  }
+
+  async function handleDiaryEntryClick(entry) {
+    if (entry.careStage !== 'task_completed' || !entry.taskId) return
+    try {
+      const task = await db.tasks.get(entry.taskId)
+      if (!task) return
+      setEditingTask(task)
+      setEditingDiaryEntryId(entry.id)
+      setTaskModalOpen(true)
+    } catch (error) {
+      console.error('Error loading task from diary entry:', error)
+    }
+  }
+
+  async function handleUncompleteTask() {
+    if (!editingTask || !editingDiaryEntryId) return
+    try {
+      const task = await db.tasks.get(editingTask.id)
+      if (!task) return
+
+      // Restore task as incomplete
+      const plantIdInt = parseInt(id)
+      const updates = { completed: 0 }
+
+      // Ensure this plant is in the task's plantIds
+      if (!task.plantIds.includes(plantIdInt)) {
+        updates.plantIds = [...task.plantIds, plantIdInt]
+      }
+
+      // Remove this plant from completedPlantIds
+      if (task.completedPlantIds?.length) {
+        updates.completedPlantIds = task.completedPlantIds.filter(pid => pid !== plantIdInt)
+      }
+
+      await db.tasks.update(task.id, updates)
+
+      // Delete the diary entry
+      await db.diaryEntries.delete(editingDiaryEntryId)
+
+      // Reschedule notification if task has a time
+      if (task.time) {
+        scheduleNotification({ ...task, ...updates })
+      }
+
+      handleCloseTaskModal()
+      await loadPlant()
+    } catch (error) {
+      console.error('Error uncompleting task:', error)
       throw error
     }
   }
@@ -556,8 +620,13 @@ export default function PlantProfile() {
                       {entriesByYear[year].map(entry => {
                         const stage = CareStages.find(s => s.id === entry.careStage)
                         const photos = entryPhotos[entry.id] || []
+                        const isClickable = entry.careStage === 'task_completed' && entry.taskId
                         return (
-                          <div key={entry.id} className="p-3 bg-gray-50 rounded-lg">
+                          <div
+                            key={entry.id}
+                            className={`p-3 bg-gray-50 rounded-lg ${isClickable ? 'cursor-pointer active:bg-gray-100' : ''}`}
+                            onClick={isClickable ? () => handleDiaryEntryClick(entry) : undefined}
+                          >
                             <div className="flex items-center gap-2 mb-1">
                               <span className="text-xs text-gray-500">
                                 {format(new Date(entry.date), 'MMM d')}
@@ -615,6 +684,7 @@ export default function PlantProfile() {
         onClose={handleCloseTaskModal}
         onSave={handleSaveTask}
         onDelete={handleDeleteTask}
+        onUncomplete={editingDiaryEntryId ? handleUncompleteTask : undefined}
         mode={editingTask ? 'edit' : 'create'}
         initialData={editingTask}
         preSelectedPlantId={parseInt(id)}

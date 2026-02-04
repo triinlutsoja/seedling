@@ -66,8 +66,8 @@ export default function ToDo() {
       // Sort by date (nearest first)
       allTasks.sort((a, b) => new Date(a.date) - new Date(b.date))
 
-      // Get all unique plant IDs from tasks
-      const plantIds = [...new Set(allTasks.flatMap(t => t.plantIds || []))]
+      // Get all unique plant IDs from tasks (including completed plants)
+      const plantIds = [...new Set(allTasks.flatMap(t => [...(t.plantIds || []), ...(t.completedPlantIds || [])]))]
       const plantsData = await db.plants.where('id').anyOf(plantIds).toArray()
       const plantsMap = {}
       plantsData.forEach(p => { plantsMap[p.id] = p })
@@ -95,7 +95,8 @@ export default function ToDo() {
           date: new Date().toISOString().split('T')[0],
           careStage: 'task_completed',
           note: task.description,
-          year: new Date().getFullYear()
+          year: new Date().getFullYear(),
+          taskId: task.id
         })
       }
 
@@ -133,6 +134,16 @@ export default function ToDo() {
           time: taskData.time,
           plantIds: taskData.plantIds
         })
+
+        // Sync description to all diary entries linked to this task
+        const linkedEntries = await db.diaryEntries
+          .where('careStage')
+          .equals('task_completed')
+          .filter(e => e.taskId === taskData.id)
+          .toArray()
+        for (const entry of linkedEntries) {
+          await db.diaryEntries.update(entry.id, { note: taskData.description })
+        }
 
         // Reschedule notification
         if (taskData.time) {

@@ -23,6 +23,7 @@ export default function TaskFormModal({
   onClose,
   onSave,
   onDelete,
+  onUncomplete,
   mode = 'create',
   initialData = null,
   preSelectedPlantId = null
@@ -87,6 +88,16 @@ export default function TaskFormModal({
       onClose()
     } catch (error) {
       console.error('Error deleting task:', error)
+    }
+  }
+
+  async function handleUncomplete() {
+    if (!onUncomplete) return
+    try {
+      await onUncomplete()
+      onClose()
+    } catch (error) {
+      console.error('Error restoring task:', error)
     }
   }
 
@@ -176,7 +187,15 @@ export default function TaskFormModal({
                   className="px-4 py-2.5 text-red-600 hover:bg-red-50 rounded-lg flex items-center gap-2"
                 >
                   <TrashIcon />
-                  Delete
+                </button>
+              )}
+              {mode === 'edit' && onUncomplete && (
+                <button
+                  type="button"
+                  onClick={handleUncomplete}
+                  className="px-4 py-2.5 text-blue-600 hover:bg-blue-50 rounded-lg font-medium"
+                >
+                  Restore Task
                 </button>
               )}
               <div className="flex-1" />

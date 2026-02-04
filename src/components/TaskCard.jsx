@@ -27,6 +27,10 @@ export default function TaskCard({ task, plants, onComplete, onEdit, onSnooze, s
   const linkedPlants = (task.plantIds || [])
     .map(id => plants[id])
     .filter(Boolean)
+  const completedPlants = (task.completedPlantIds || [])
+    .map(id => plants[id])
+    .filter(Boolean)
+  const allPlants = [...linkedPlants, ...completedPlants]
 
   function handleCardClick(e) {
     // Don't trigger edit when clicking checkbox or snooze button
@@ -57,18 +61,23 @@ export default function TaskCard({ task, plants, onComplete, onEdit, onSnooze, s
           <p className="text-gray-900 font-medium">{task.description}</p>
 
           {/* Plant links */}
-          {showPlantLinks && linkedPlants.length > 0 && (
+          {showPlantLinks && allPlants.length > 0 && (
             <div className="flex flex-wrap gap-x-2 gap-y-0.5 mt-0.5">
-              {linkedPlants.map((plant, index) => (
-                <span key={plant.id}>
+              {allPlants.map((plant, index) => (
+                <span key={plant.id} className="inline-flex items-center">
                   <Link
                     to={`/plant/${plant.id}`}
-                    className="text-sm text-green-600 hover:underline"
+                    className={`text-sm hover:underline ${completedPlants.includes(plant) ? 'text-green-600' : 'text-gray-400'}`}
                     onClick={(e) => e.stopPropagation()}
                   >
                     {plant.name}
                   </Link>
-                  {index < linkedPlants.length - 1 && (
+                  {completedPlants.includes(plant) && (
+                    <svg className="w-3.5 h-3.5 text-green-500 ml-0.5" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                  )}
+                  {index < allPlants.length - 1 && (
                     <span className="text-gray-400">,</span>
                   )}
                 </span>
@@ -76,7 +85,7 @@ export default function TaskCard({ task, plants, onComplete, onEdit, onSnooze, s
             </div>
           )}
 
-          {linkedPlants.length === 0 && showPlantLinks && (
+          {allPlants.length === 0 && showPlantLinks && (
             <span className="text-sm text-gray-400">No plants linked</span>
           )}
 

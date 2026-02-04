@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { db } from '../db/database'
 import TaskCard from '../components/TaskCard'
 import TaskFormModal from '../components/TaskFormModal'
+import CalendarView from '../components/CalendarView'
 import { scheduleNotification, cancelNotification, rescheduleAllNotifications } from '../utils/notifications'
 
 function CalendarViewIcon({ active }) {
@@ -22,7 +23,7 @@ function ListViewIcon({ active }) {
 
 function PlusIcon() {
   return (
-    <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
     </svg>
   )
@@ -227,25 +228,31 @@ export default function ToDo() {
 
       {/* Content */}
       <div className="px-4 -mt-2">
-        {tasks.length === 0 ? (
-          <EmptyState />
-        ) : viewMode === 'list' ? (
-          <div className="space-y-3">
-            {tasks.map(task => (
-              <TaskCard
-                key={task.id}
-                task={task}
-                plants={plants}
-                onComplete={handleComplete}
-                onEdit={handleEditTask}
-                onSnooze={handleSnooze}
-              />
-            ))}
-          </div>
+        {viewMode === 'list' ? (
+          tasks.length === 0 ? (
+            <EmptyState />
+          ) : (
+            <div className="space-y-3">
+              {tasks.map(task => (
+                <TaskCard
+                  key={task.id}
+                  task={task}
+                  plants={plants}
+                  onComplete={handleComplete}
+                  onEdit={handleEditTask}
+                  onSnooze={handleSnooze}
+                />
+              ))}
+            </div>
+          )
         ) : (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-            <p className="text-center text-gray-500">Calendar view coming soon</p>
-          </div>
+          <CalendarView
+            tasks={tasks}
+            plants={plants}
+            onComplete={handleComplete}
+            onEdit={handleEditTask}
+            onSnooze={handleSnooze}
+          />
         )}
       </div>
 

@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { db, PlantLifecycle, FrostTolerance, Months } from '../db/database'
+import { deletePlant } from '../utils/plantUtils'
+import DeleteConfirmModal from '../components/DeleteConfirmModal'
 
 function BackButton({ onClick }) {
   return (
@@ -119,6 +121,10 @@ export default function EditPlant() {
   const [currentMainPhoto, setCurrentMainPhoto] = useState(null)
   const [newMainPhoto, setNewMainPhoto] = useState(null)
 
+  // Delete state
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+
   useEffect(() => {
     loadPlant()
   }, [id])
@@ -225,6 +231,20 @@ export default function EditPlant() {
     } catch (error) {
       console.error('Error updating plant:', error)
       setSaving(false)
+    }
+  }
+
+  async function handleDelete() {
+    setDeleting(true)
+    try {
+      await deletePlant(id)
+      navigate('/', {
+        state: { message: `${name} has been permanently deleted.` }
+      })
+    } catch (error) {
+      console.error('Error deleting plant:', error)
+      setDeleting(false)
+      setShowDeleteModal(false)
     }
   }
 
@@ -347,7 +367,37 @@ export default function EditPlant() {
         >
           {saving ? 'Saving...' : 'Save Changes'}
         </button>
+
+        {/* Danger Zone */}
+        <div className="bg-white rounded-xl shadow-sm border border-red-100 overflow-hidden mt-6">
+          <div className="px-4 py-3 border-b border-red-100 bg-red-50">
+            <h2 className="font-semibold text-red-800">Danger Zone</h2>
+          </div>
+          <div className="p-4">
+            <p className="text-sm text-gray-600 mb-3">
+              Permanently delete this plant and all its associated data including diary entries, photos, and task links.
+            </p>
+            <button
+              type="button"
+              onClick={() => setShowDeleteModal(true)}
+              className="w-full py-3 border-2 border-red-300 text-red-600 rounded-xl font-medium hover:bg-red-50 transition-colors"
+            >
+              Delete Plant
+            </button>
+          </div>
+        </div>
       </form>
+
+      {/* Delete Confirmation Modal */}
+      <DeleteConfirmModal
+        isOpen={showDeleteModal}
+        onClose={() => setShowDeleteModal(false)}
+        onConfirm={handleDelete}
+        title="Delete Plant?"
+        message={`Are you sure you want to permanently delete "${name}" and all its data? This includes all diary entries, photos, and task links. This action cannot be undone.`}
+        confirmText="Delete Plant"
+        isDeleting={deleting}
+      />
     </div>
   )
 }

@@ -56,6 +56,10 @@ export async function deletePlant(plantId) {
     }
   }
 
-  // 5. Finally, delete the plant record itself
+  // 5. Delete all companion planting relationships involving this plant
+  await db.companionPlantings.where('plantId').equals(id).delete()
+  await db.companionPlantings.where('companionPlantId').equals(id).delete()
+
+  // 6. Finally, delete the plant record itself
   await db.plants.delete(id)
 }

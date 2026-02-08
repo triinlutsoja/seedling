@@ -4,6 +4,7 @@ import { db, PlantStatus, CareStages, Months } from '../db/database'
 import { format, isToday, isPast } from 'date-fns'
 import PhotoGallery from '../components/PhotoGallery'
 import TaskFormModal from '../components/TaskFormModal'
+import CompanionFormModal from '../components/CompanionFormModal'
 import { scheduleNotification, cancelNotification } from '../utils/notifications'
 
 function BackButton({ onClick }) {
@@ -35,6 +36,34 @@ function CheckIcon() {
   )
 }
 
+function CompanionCard({ plant, photo, benefits, onClick }) {
+  return (
+    <div
+      onClick={onClick}
+      className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg cursor-pointer active:bg-gray-100"
+    >
+      <div className="w-12 h-12 rounded-lg bg-green-100 flex-shrink-0 overflow-hidden">
+        {photo ? (
+          <img src={photo.dataUrl} alt={plant.name} className="w-full h-full object-cover" />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center">
+            <svg className="w-6 h-6 text-green-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+            </svg>
+          </div>
+        )}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="font-medium text-gray-900">{plant.name}</p>
+        <p className="text-sm text-gray-500 line-clamp-2">{benefits}</p>
+      </div>
+      <svg className="w-5 h-5 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+      </svg>
+    </div>
+  )
+}
+
 export default function PlantProfile() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -59,6 +88,13 @@ export default function PlantProfile() {
   const [taskModalOpen, setTaskModalOpen] = useState(false)
   const [editingTask, setEditingTask] = useState(null)
   const [editingDiaryEntryId, setEditingDiaryEntryId] = useState(null)
+
+  // Companion plants state
+  const [companionMode, setCompanionMode] = useState('helpedBy')
+  const [companionsHelpedBy, setCompanionsHelpedBy] = useState([])
+  const [companionsHelps, setCompanionsHelps] = useState([])
+  const [companionModalOpen, setCompanionModalOpen] = useState(false)
+  const [editingCompanion, setEditingCompanion] = useState(null)
 
   useEffect(() => {
     loadPlant()
@@ -109,6 +145,42 @@ export default function PlantProfile() {
       const incompleteTasks = plantTasks.filter(t => t.completed === 0)
       incompleteTasks.sort((a, b) => new Date(a.date) - new Date(b.date))
       setTasks(incompleteTasks)
+
+      // Load companion plants that help THIS plant (helpedBy)
+      const helpedByRelations = await db.companionPlantings
+        .where('plantId')
+        .equals(parseInt(id))
+        .toArray()
+      const helpedByDetails = await Promise.all(
+        helpedByRelations.map(async (relation) => {
+          const companionPlant = await db.plants.get(relation.companionPlantId)
+          const photo = await db.photos
+            .where('plantId')
+            .equals(relation.companionPlantId)
+            .filter(p => p.isMainPhoto === true)
+            .first()
+          return { ...relation, companionPlant, mainPhoto: photo }
+        })
+      )
+      setCompanionsHelpedBy(helpedByDetails.filter(c => c.companionPlant))
+
+      // Load plants THIS plant helps (helps)
+      const helpsRelations = await db.companionPlantings
+        .where('companionPlantId')
+        .equals(parseInt(id))
+        .toArray()
+      const helpsDetails = await Promise.all(
+        helpsRelations.map(async (relation) => {
+          const helpedPlant = await db.plants.get(relation.plantId)
+          const photo = await db.photos
+            .where('plantId')
+            .equals(relation.plantId)
+            .filter(p => p.isMainPhoto === true)
+            .first()
+          return { ...relation, helpedPlant, mainPhoto: photo }
+        })
+      )
+      setCompanionsHelps(helpsDetails.filter(c => c.helpedPlant))
     } catch (error) {
       console.error('Error loading plant:', error)
     }
@@ -330,6 +402,42 @@ export default function PlantProfile() {
     }
   }
 
+  function handleEditCompanion(companion) {
+    setEditingCompanion(companion)
+    setCompanionModalOpen(true)
+  }
+
+  function handleOpenCreateCompanion() {
+    setEditingCompanion(null)
+    setCompanionModalOpen(true)
+  }
+
+  function handleCloseCompanionModal() {
+    setCompanionModalOpen(false)
+    setEditingCompanion(null)
+  }
+
+  async function handleSaveCompanion(data) {
+    if (data.id) {
+      await db.companionPlantings.update(data.id, {
+        companionPlantId: data.companionPlantId,
+        benefits: data.benefits
+      })
+    } else {
+      await db.companionPlantings.add({
+        plantId: parseInt(id),
+        companionPlantId: data.companionPlantId,
+        benefits: data.benefits
+      })
+    }
+    await loadPlant()
+  }
+
+  async function handleDeleteCompanion(companionId) {
+    await db.companionPlantings.delete(companionId)
+    await loadPlant()
+  }
+
   if (loading) {
     return (
       <div className="h-full flex items-center justify-center bg-green-50">
@@ -450,6 +558,119 @@ export default function PlantProfile() {
             <p className="text-gray-700 whitespace-pre-wrap">{plant.instructions}</p>
           </Section>
         )}
+
+        {/* Companion Plants */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+            <h2 className="font-semibold text-gray-900">Companion Plants</h2>
+            <button
+              onClick={handleOpenCreateCompanion}
+              className="p-1 touch-feedback rounded-full hover:bg-gray-100"
+            >
+              <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+            </button>
+          </div>
+          <div className="p-4">
+            {/* Toggle buttons */}
+            {(companionsHelpedBy.length > 0 || companionsHelps.length > 0) && (
+              <div className="flex gap-2 mb-4">
+                <button
+                  onClick={() => setCompanionMode('helpedBy')}
+                  className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
+                    companionMode === 'helpedBy'
+                      ? 'bg-green-100 text-green-700'
+                      : 'bg-gray-100 text-gray-500'
+                  }`}
+                >
+                  Helped by ({companionsHelpedBy.length})
+                </button>
+                <button
+                  onClick={() => setCompanionMode('helps')}
+                  className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
+                    companionMode === 'helps'
+                      ? 'bg-green-100 text-green-700'
+                      : 'bg-gray-100 text-gray-500'
+                  }`}
+                >
+                  Helps ({companionsHelps.length})
+                </button>
+              </div>
+            )}
+
+            {/* Explanatory text */}
+            {(companionsHelpedBy.length > 0 || companionsHelps.length > 0) && (
+              <p className="text-sm text-gray-500 mb-3">
+                {companionMode === 'helpedBy'
+                  ? `${plant.name} grows best when the following are planted nearby:`
+                  : `${plant.name} is a beneficial companion to:`
+                }
+              </p>
+            )}
+
+            {/* Companion list */}
+            {companionMode === 'helpedBy' ? (
+              companionsHelpedBy.length > 0 ? (
+                <div className="space-y-2">
+                  {companionsHelpedBy.map(companion => (
+                    <div key={companion.id} className="flex items-center gap-2">
+                      <div
+                        onClick={() => navigate(`/plant/${companion.companionPlantId}`)}
+                        className="flex-1 flex items-center gap-3 p-3 bg-gray-50 rounded-lg cursor-pointer active:bg-gray-100"
+                      >
+                        <div className="w-12 h-12 rounded-lg bg-green-100 flex-shrink-0 overflow-hidden">
+                          {companion.mainPhoto ? (
+                            <img src={companion.mainPhoto.dataUrl} alt={companion.companionPlant.name} className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center">
+                              <svg className="w-6 h-6 text-green-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                              </svg>
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-gray-900">{companion.companionPlant.name}</p>
+                          <p className="text-sm text-gray-500 line-clamp-2">{companion.benefits}</p>
+                        </div>
+                        <svg className="w-5 h-5 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                      </div>
+                      <button
+                        onClick={() => handleEditCompanion(companion)}
+                        className="p-2 text-gray-400 hover:text-green-600"
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                        </svg>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-gray-400 text-center py-4">No companion plants added</p>
+              )
+            ) : (
+              companionsHelps.length > 0 ? (
+                <div className="space-y-2">
+                  {companionsHelps.map(companion => (
+                    <CompanionCard
+                      key={companion.id}
+                      plant={companion.helpedPlant}
+                      photo={companion.mainPhoto}
+                      benefits={companion.benefits}
+                      onClick={() => navigate(`/plant/${companion.plantId}`)}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <p className="text-gray-400 text-center py-4">{plant.name} is not a companion to any plants</p>
+              )
+            )}
+          </div>
+        </div>
 
         {/* To-Do Section */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
@@ -688,6 +909,18 @@ export default function PlantProfile() {
         mode={editingTask ? 'edit' : 'create'}
         initialData={editingTask}
         preSelectedPlantId={parseInt(id)}
+      />
+
+      {/* Companion Form Modal */}
+      <CompanionFormModal
+        isOpen={companionModalOpen}
+        onClose={handleCloseCompanionModal}
+        onSave={handleSaveCompanion}
+        onDelete={handleDeleteCompanion}
+        mode={editingCompanion ? 'edit' : 'create'}
+        initialData={editingCompanion}
+        currentPlantId={parseInt(id)}
+        existingCompanionIds={companionsHelpedBy.map(c => c.companionPlantId)}
       />
     </div>
   )

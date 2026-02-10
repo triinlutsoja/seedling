@@ -44,55 +44,65 @@ function CalendarView({ plants, type }) {
         <h2 className="font-semibold">{title}</h2>
       </div>
 
-      {/* Month headers */}
-      <div className="grid grid-cols-12 border-b border-gray-100">
-        {Months.map((month) => (
-          <div key={month} className="text-center py-2 text-xs text-gray-500 font-medium">
-            {month}
-          </div>
-        ))}
+      {/* Month headers - using table layout for consistent column alignment */}
+      <div>
+        <table className="w-full border-collapse" style={{ tableLayout: 'fixed' }}>
+          <thead>
+            <tr className="border-b border-gray-100">
+              <th style={{ width: '90px' }} className="py-1 text-left"></th>
+              {Months.map((month) => (
+                <th key={month} className="text-center py-1 text-xs text-gray-500 font-medium h-12">
+                  <span className="inline-block" style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}>
+                    {month}
+                  </span>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-50">
+            {plantsWithPeriod.length === 0 ? (
+              <tr>
+                <td colSpan={13} className="text-center py-8 px-4">
+                  <p className="text-gray-400 text-sm">{emptyMessage}</p>
+                </td>
+              </tr>
+            ) : (
+              plantsWithPeriod.map((plant) => {
+                const period = plant[periodField]
+                const startMonth = period?.start ?? 0
+                const endMonth = period?.end ?? 11
+
+                return (
+                  <tr key={plant.id}>
+                    <td
+                      style={{ width: '90px' }}
+                      className="px-2 py-1 text-sm font-medium text-gray-700 whitespace-nowrap overflow-visible relative z-10"
+                    >
+                      {plant.name}
+                    </td>
+                    {Months.map((_, index) => {
+                      const isActive = index >= startMonth && index <= endMonth
+                      return (
+                        <td key={index} className="p-0 h-8 align-middle">
+                          {isActive && (
+                            <div
+                              className={`h-4 ${
+                                type === 'sowing' ? 'bg-amber-400' : 'bg-green-500'
+                              } ${index === startMonth ? 'rounded-l-full ml-0.5' : ''} ${
+                                index === endMonth ? 'rounded-r-full mr-0.5' : ''
+                              }`}
+                            />
+                          )}
+                        </td>
+                      )
+                    })}
+                  </tr>
+                )
+              })
+            )}
+          </tbody>
+        </table>
       </div>
-
-      {/* Plant rows */}
-      {plantsWithPeriod.length === 0 ? (
-        <div className="text-center py-8 px-4">
-          <p className="text-gray-400 text-sm">{emptyMessage}</p>
-        </div>
-      ) : (
-        <div className="divide-y divide-gray-50">
-          {plantsWithPeriod.map((plant) => {
-            const period = plant[periodField]
-            const startMonth = period?.start ?? 0
-            const endMonth = period?.end ?? 11
-
-            return (
-              <div key={plant.id} className="flex items-center">
-                <div className="w-24 px-3 py-2 text-sm font-medium text-gray-700 truncate flex-shrink-0">
-                  {plant.name}
-                </div>
-                <div className="grid grid-cols-12 flex-1">
-                  {Months.map((_, index) => {
-                    const isActive = index >= startMonth && index <= endMonth
-                    return (
-                      <div key={index} className="h-8 flex items-center justify-center">
-                        {isActive && (
-                          <div
-                            className={`h-4 w-full ${
-                              type === 'sowing' ? 'bg-amber-400' : 'bg-green-500'
-                            } ${index === startMonth ? 'rounded-l-full ml-1' : ''} ${
-                              index === endMonth ? 'rounded-r-full mr-1' : ''
-                            }`}
-                          />
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      )}
     </div>
   )
 }

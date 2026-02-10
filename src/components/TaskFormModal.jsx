@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import PlantMultiSelect from './PlantMultiSelect'
+import DeleteConfirmModal from './DeleteConfirmModal'
 import { requestNotificationPermission, notificationsSupported } from '../utils/notifications'
 
 function XIcon() {
@@ -33,6 +34,8 @@ export default function TaskFormModal({
   const [time, setTime] = useState('')
   const [plantIds, setPlantIds] = useState([])
   const [saving, setSaving] = useState(false)
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
     if (isOpen) {
@@ -79,16 +82,18 @@ export default function TaskFormModal({
     setSaving(false)
   }
 
-  async function handleDelete() {
+  async function handleDeleteConfirm() {
     if (!initialData?.id) return
-    if (!confirm('Are you sure you want to delete this task?')) return
 
+    setDeleting(true)
     try {
       await onDelete(initialData.id)
+      setShowDeleteModal(false)
       onClose()
     } catch (error) {
       console.error('Error deleting task:', error)
     }
+    setDeleting(false)
   }
 
   async function handleUncomplete() {
@@ -183,7 +188,7 @@ export default function TaskFormModal({
               {mode === 'edit' && onDelete && (
                 <button
                   type="button"
-                  onClick={handleDelete}
+                  onClick={() => setShowDeleteModal(true)}
                   className="px-4 py-2.5 text-red-600 hover:bg-red-50 rounded-lg flex items-center gap-2"
                 >
                   <TrashIcon />
@@ -217,6 +222,28 @@ export default function TaskFormModal({
           </form>
         </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      <DeleteConfirmModal
+        isOpen={showDeleteModal}
+        onClose={() => setShowDeleteModal(false)}
+        onConfirm={handleDeleteConfirm}
+        title="Delete Task?"
+        message={(() => {
+          const totalPlants = (initialData?.plantIds?.length || 0) + (initialData?.completedPlantIds?.length || 0)
+          const hasCompletedPlants = (initialData?.completedPlantIds?.length || 0) > 0
+          let msg = `Are you sure you want to delete "${description}"?`
+          if (totalPlants > 1) {
+            msg += ' This will remove the task for all linked plants.'
+          }
+          if (hasCompletedPlants) {
+            msg += ' Diary entries for completed plants will no longer be linked to this task.'
+          }
+          return msg
+        })()}
+        confirmText="Delete Task"
+        isDeleting={deleting}
+      />
     </>
   )
 }

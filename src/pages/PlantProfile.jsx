@@ -5,6 +5,7 @@ import { format, isToday, isPast } from 'date-fns'
 import PhotoGallery from '../components/PhotoGallery'
 import TaskFormModal from '../components/TaskFormModal'
 import CompanionFormModal from '../components/CompanionFormModal'
+import DiaryEntryEditModal from '../components/DiaryEntryEditModal'
 import { scheduleNotification, cancelNotification } from '../utils/notifications'
 
 function BackButton({ onClick }) {
@@ -88,6 +89,8 @@ export default function PlantProfile() {
   const [taskModalOpen, setTaskModalOpen] = useState(false)
   const [editingTask, setEditingTask] = useState(null)
   const [editingDiaryEntryId, setEditingDiaryEntryId] = useState(null)
+  const [diaryEntryModalOpen, setDiaryEntryModalOpen] = useState(false)
+  const [editingDiaryEntry, setEditingDiaryEntry] = useState(null)
 
   // Companion plants state
   const [companionMode, setCompanionMode] = useState('helpedBy')
@@ -355,7 +358,12 @@ export default function PlantProfile() {
     if (entry.careStage !== 'task_completed' || !entry.taskId) return
     try {
       const task = await db.tasks.get(entry.taskId)
-      if (!task) return
+      if (!task) {
+        // Task was deleted - open diary entry edit modal instead
+        setEditingDiaryEntry(entry)
+        setDiaryEntryModalOpen(true)
+        return
+      }
       setEditingTask(task)
       setEditingDiaryEntryId(entry.id)
       setTaskModalOpen(true)
@@ -398,6 +406,33 @@ export default function PlantProfile() {
       await loadPlant()
     } catch (error) {
       console.error('Error uncompleting task:', error)
+      throw error
+    }
+  }
+
+  function handleCloseDiaryEntryModal() {
+    setDiaryEntryModalOpen(false)
+    setEditingDiaryEntry(null)
+  }
+
+  async function handleSaveDiaryEntry(entryId, note) {
+    try {
+      await db.diaryEntries.update(entryId, { note })
+      await loadPlant()
+    } catch (error) {
+      console.error('Error saving diary entry:', error)
+      throw error
+    }
+  }
+
+  async function handleDeleteDiaryEntry(entryId) {
+    try {
+      // Delete any photos associated with this diary entry
+      await db.photos.where('diaryEntryId').equals(entryId).delete()
+      await db.diaryEntries.delete(entryId)
+      await loadPlant()
+    } catch (error) {
+      console.error('Error deleting diary entry:', error)
       throw error
     }
   }
@@ -921,6 +956,15 @@ export default function PlantProfile() {
         initialData={editingCompanion}
         currentPlantId={parseInt(id)}
         existingCompanionIds={companionsHelpedBy.map(c => c.companionPlantId)}
+      />
+
+      {/* Diary Entry Edit Modal (for orphaned entries) */}
+      <DiaryEntryEditModal
+        isOpen={diaryEntryModalOpen}
+        onClose={handleCloseDiaryEntryModal}
+        onSave={handleSaveDiaryEntry}
+        onDelete={handleDeleteDiaryEntry}
+        entry={editingDiaryEntry}
       />
     </div>
   )

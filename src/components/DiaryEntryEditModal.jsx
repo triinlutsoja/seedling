@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react'
-import PlantSingleSelect from './PlantSingleSelect'
 import DeleteConfirmModal from './DeleteConfirmModal'
 
 function XIcon() {
@@ -18,73 +17,53 @@ function TrashIcon() {
   )
 }
 
-export default function CompanionFormModal({
+export default function DiaryEntryEditModal({
   isOpen,
   onClose,
   onSave,
   onDelete,
-  mode = 'create',
-  initialData = null,
-  currentPlantId,
-  existingCompanionIds = []
+  entry
 }) {
-  const [companionPlantId, setCompanionPlantId] = useState(null)
-  const [benefits, setBenefits] = useState('')
+  const [note, setNote] = useState('')
   const [saving, setSaving] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
-    if (isOpen) {
-      if (mode === 'edit' && initialData) {
-        setCompanionPlantId(initialData.companionPlantId)
-        setBenefits(initialData.benefits || '')
-      } else {
-        setCompanionPlantId(null)
-        setBenefits('')
-      }
+    if (isOpen && entry) {
+      setNote(entry.note || '')
     }
-  }, [isOpen, mode, initialData])
+  }, [isOpen, entry])
 
   async function handleSubmit(e) {
     e.preventDefault()
-    if (!companionPlantId || !benefits.trim()) return
+    if (!note.trim()) return
 
     setSaving(true)
     try {
-      await onSave({
-        id: initialData?.id,
-        companionPlantId,
-        benefits: benefits.trim()
-      })
+      await onSave(entry.id, note.trim())
       onClose()
     } catch (error) {
-      console.error('Error saving companion:', error)
+      console.error('Error saving diary entry:', error)
     }
     setSaving(false)
   }
 
   async function handleDeleteConfirm() {
-    if (!initialData?.id) return
+    if (!entry?.id) return
 
     setDeleting(true)
     try {
-      await onDelete(initialData.id)
+      await onDelete(entry.id)
       setShowDeleteModal(false)
       onClose()
     } catch (error) {
-      console.error('Error deleting companion:', error)
+      console.error('Error deleting diary entry:', error)
     }
     setDeleting(false)
   }
 
   if (!isOpen) return null
-
-  // Exclude current plant and existing companions (except the one being edited)
-  const excludeIds = [
-    currentPlantId,
-    ...existingCompanionIds.filter(id => id !== initialData?.companionPlantId)
-  ]
 
   return (
     <>
@@ -100,7 +79,7 @@ export default function CompanionFormModal({
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 sticky top-0 bg-white">
             <h2 className="text-lg font-semibold text-gray-900">
-              {mode === 'create' ? 'Add Companion Plant' : 'Edit Companion Plant'}
+              Edit Diary Entry
             </h2>
             <button
               onClick={onClose}
@@ -112,41 +91,38 @@ export default function CompanionFormModal({
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="p-4 space-y-4">
-            {/* Plant selection */}
-            <PlantSingleSelect
-              selectedId={companionPlantId}
-              onChange={setCompanionPlantId}
-              excludeIds={excludeIds}
-              label="Companion Plant"
-              disabled={mode === 'edit'}
-            />
+            {/* Info about orphaned entry */}
+            <div className="bg-blue-50 border border-blue-100 rounded-lg p-3">
+              <p className="text-sm text-blue-700">
+                This diary entry was linked to a task that has been deleted. You can edit the note or delete this entry.
+              </p>
+            </div>
 
-            {/* Benefits */}
+            {/* Note */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                How does this plant help? <span className="text-red-500">*</span>
+                Note <span className="text-red-500">*</span>
               </label>
               <textarea
-                value={benefits}
-                onChange={(e) => setBenefits(e.target.value)}
-                placeholder="e.g., Repels pests, improves soil nitrogen, attracts pollinators..."
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="Enter note..."
                 className="w-full px-3 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 resize-none"
                 rows={3}
                 required
+                autoFocus
               />
             </div>
 
             {/* Actions */}
             <div className="flex gap-3 pt-2">
-              {mode === 'edit' && onDelete && (
-                <button
-                  type="button"
-                  onClick={() => setShowDeleteModal(true)}
-                  className="px-4 py-2.5 text-red-600 hover:bg-red-50 rounded-lg flex items-center gap-2"
-                >
-                  <TrashIcon />
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => setShowDeleteModal(true)}
+                className="px-4 py-2.5 text-red-600 hover:bg-red-50 rounded-lg flex items-center gap-2"
+              >
+                <TrashIcon />
+              </button>
               <div className="flex-1" />
               <button
                 type="button"
@@ -157,7 +133,7 @@ export default function CompanionFormModal({
               </button>
               <button
                 type="submit"
-                disabled={saving || !companionPlantId || !benefits.trim()}
+                disabled={saving || !note.trim()}
                 className="px-6 py-2.5 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {saving ? 'Saving...' : 'Save'}
@@ -172,9 +148,9 @@ export default function CompanionFormModal({
         isOpen={showDeleteModal}
         onClose={() => setShowDeleteModal(false)}
         onConfirm={handleDeleteConfirm}
-        title="Remove Companion Plant?"
-        message="Are you sure you want to remove this companion plant relationship? This won't delete the plant itself."
-        confirmText="Remove"
+        title="Delete Diary Entry?"
+        message="Are you sure you want to delete this diary entry? This action cannot be undone."
+        confirmText="Delete Entry"
         isDeleting={deleting}
       />
     </>

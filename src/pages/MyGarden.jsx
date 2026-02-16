@@ -1,6 +1,13 @@
 import { useState, useEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { db, PlantStatus } from '../db/database'
+import BackupReminderBanner from '../components/BackupReminderBanner'
+import Toast from '../components/Toast'
+import {
+  shouldShowBackupReminder,
+  dismissBackupReminder,
+  exportAllData
+} from '../utils/backup'
 
 function SearchIcon() {
   return (
@@ -89,6 +96,8 @@ export default function MyGarden() {
   const [mainPhotos, setMainPhotos] = useState({}) // { plantId: photo }
   const [loading, setLoading] = useState(true)
   const [toast, setToast] = useState(null)
+  const [showBackupReminder, setShowBackupReminder] = useState(false)
+  const [toastData, setToastData] = useState(null)
 
   // Handle success message from navigation (e.g., after deleting a plant)
   useEffect(() => {
@@ -105,6 +114,34 @@ export default function MyGarden() {
   useEffect(() => {
     loadPlants()
   }, [showArchived])
+
+  // Check if backup reminder should be shown
+  useEffect(() => {
+    setShowBackupReminder(shouldShowBackupReminder())
+  }, [])
+
+  async function handleExport() {
+    const result = await exportAllData()
+    if (result.success) {
+      setShowBackupReminder(false)
+      setToastData({
+        message: 'Backup exported successfully!',
+        details: `${result.filename} saved to Downloads`,
+        type: 'success'
+      })
+    } else {
+      setToastData({
+        message: 'Backup export failed. Please try again.',
+        details: result.error,
+        type: 'error'
+      })
+    }
+  }
+
+  function handleDismissReminder() {
+    dismissBackupReminder()
+    setShowBackupReminder(false)
+  }
 
   async function loadPlants() {
     setLoading(true)
@@ -174,8 +211,18 @@ export default function MyGarden() {
         </div>
       </header>
 
+      {/* Backup Reminder Banner */}
+      {showBackupReminder && (
+        <div className="px-4 pt-4">
+          <BackupReminderBanner
+            onExportClick={handleExport}
+            onDismiss={handleDismissReminder}
+          />
+        </div>
+      )}
+
       {/* Content */}
-      <div className="px-4 -mt-2">
+      <div className={`px-4 ${showBackupReminder ? 'pt-4' : '-mt-2'}`}>
         {loading ? (
           <div className="text-center py-12">
             <div className="w-8 h-8 border-2 border-green-600 border-t-transparent rounded-full animate-spin mx-auto" />
@@ -208,24 +255,24 @@ export default function MyGarden() {
         </Link>
       )}
 
-      {/* Toast notification */}
+      {/* Toast notification for navigation messages */}
       {toast && (
-        <div className="fixed bottom-24 left-4 right-4 z-50 animate-slide-up">
-          <div className="bg-gray-800 text-white px-4 py-3 rounded-xl shadow-lg flex items-center gap-3">
-            <svg className="w-5 h-5 text-green-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-            </svg>
-            <span className="text-sm">{toast}</span>
-            <button
-              onClick={() => setToast(null)}
-              className="ml-auto text-gray-400 hover:text-white"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-        </div>
+        <Toast
+          message={toast}
+          type="success"
+          onDismiss={() => setToast(null)}
+          duration={4000}
+        />
+      )}
+
+      {/* Toast notification for backup operations */}
+      {toastData && (
+        <Toast
+          message={toastData.message}
+          details={toastData.details}
+          type={toastData.type}
+          onDismiss={() => setToastData(null)}
+        />
       )}
     </div>
   )

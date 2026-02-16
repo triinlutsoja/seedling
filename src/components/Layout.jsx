@@ -1,4 +1,14 @@
+import { useState } from 'react'
 import { Outlet, NavLink } from 'react-router-dom'
+import SettingsMenu from './SettingsMenu'
+import ImportConfirmModal from './ImportConfirmModal'
+import Toast from './Toast'
+import {
+  exportAllData,
+  readBackupFile,
+  validateBackupFile,
+  importBackupData
+} from '../utils/backup'
 
 // Icon components
 function GardenIcon({ active }) {
@@ -55,6 +65,30 @@ function TodoIcon({ active }) {
   )
 }
 
+function SettingsIcon({ active }) {
+  return (
+    <svg
+      className={`w-6 h-6 ${active ? 'text-green-600' : 'text-gray-500'}`}
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+      />
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+      />
+    </svg>
+  )
+}
+
 function NavItem({ to, icon: Icon, label, end = false }) {
   return (
     <NavLink
@@ -78,6 +112,84 @@ function NavItem({ to, icon: Icon, label, end = false }) {
 }
 
 export default function Layout() {
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [importConfirmOpen, setImportConfirmOpen] = useState(false)
+  const [selectedFile, setSelectedFile] = useState(null)
+  const [backupData, setBackupData] = useState(null)
+  const [isImporting, setIsImporting] = useState(false)
+  const [toastData, setToastData] = useState(null)
+
+  async function handleExport() {
+    const result = await exportAllData()
+    if (result.success) {
+      setToastData({
+        message: 'Backup exported successfully!',
+        details: `${result.filename} saved to Downloads`,
+        type: 'success'
+      })
+    } else {
+      setToastData({
+        message: 'Backup export failed. Please try again.',
+        details: result.error,
+        type: 'error'
+      })
+    }
+  }
+
+  async function handleImportSelect(file) {
+    try {
+      const data = await readBackupFile(file)
+      const validation = validateBackupFile(data)
+      if (!validation.valid) {
+        setToastData({
+          message: 'Invalid backup file',
+          details: validation.error,
+          type: 'error'
+        })
+        return
+      }
+      setSelectedFile(file)
+      setBackupData(data)
+      setSettingsOpen(false)
+      setImportConfirmOpen(true)
+    } catch (error) {
+      setToastData({
+        message: 'Failed to read backup file',
+        details: error.message,
+        type: 'error'
+      })
+    }
+  }
+
+  async function handleImportConfirm() {
+    if (!backupData) return
+
+    setIsImporting(true)
+    const result = await importBackupData(backupData)
+    setIsImporting(false)
+
+    if (result.success) {
+      setImportConfirmOpen(false)
+      setSelectedFile(null)
+      setBackupData(null)
+      setToastData({
+        message: 'Backup imported successfully!',
+        details: 'Refreshing app...',
+        type: 'success'
+      })
+      // Refresh the page to show imported data
+      setTimeout(() => {
+        window.location.reload()
+      }, 1500)
+    } else {
+      setToastData({
+        message: 'Import failed. Please try again.',
+        details: result.error,
+        type: 'error'
+      })
+    }
+  }
+
   return (
     <div className="h-full flex flex-col bg-green-50">
       {/* Main content area */}
@@ -91,8 +203,46 @@ export default function Layout() {
           <NavItem to="/" icon={GardenIcon} label="My Garden" end />
           <NavItem to="/calendars" icon={CalendarIcon} label="Calendars" />
           <NavItem to="/todo" icon={TodoIcon} label="To-Do" />
+          <button
+            onClick={() => setSettingsOpen(true)}
+            className="flex flex-col items-center justify-center py-2 px-4 touch-feedback text-gray-500"
+          >
+            <SettingsIcon active={false} />
+            <span className="text-xs mt-1 font-medium text-gray-500">Settings</span>
+          </button>
         </div>
       </nav>
+
+      {/* Settings Menu */}
+      <SettingsMenu
+        isOpen={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        onExport={handleExport}
+        onImportSelect={handleImportSelect}
+      />
+
+      {/* Import Confirmation Modal */}
+      <ImportConfirmModal
+        isOpen={importConfirmOpen}
+        onClose={() => {
+          setImportConfirmOpen(false)
+          setSelectedFile(null)
+          setBackupData(null)
+        }}
+        onConfirm={handleImportConfirm}
+        fileName={selectedFile?.name || ''}
+        isImporting={isImporting}
+      />
+
+      {/* Toast notification */}
+      {toastData && (
+        <Toast
+          message={toastData.message}
+          details={toastData.details}
+          type={toastData.type}
+          onDismiss={() => setToastData(null)}
+        />
+      )}
     </div>
   )
 }

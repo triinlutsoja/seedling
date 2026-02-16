@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { db, PlantStatus, CareStages, Months } from '../db/database'
 import { format, isToday, isPast } from 'date-fns'
@@ -61,6 +61,45 @@ function CompanionCard({ plant, photo, benefits, onClick }) {
       <svg className="w-5 h-5 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
       </svg>
+    </div>
+  )
+}
+
+function CollapsibleText({ text, className = 'text-gray-700 whitespace-pre-wrap' }) {
+  const [expanded, setExpanded] = useState(false)
+  const [isClamped, setIsClamped] = useState(false)
+  const textRef = useRef(null)
+
+  useEffect(() => {
+    if (textRef.current) {
+      setIsClamped(textRef.current.scrollHeight > textRef.current.clientHeight)
+    }
+  }, [text])
+
+  return (
+    <div>
+      <p
+        ref={textRef}
+        className={`${className} ${!expanded ? 'line-clamp-3' : ''}`}
+      >
+        {text}
+      </p>
+      {isClamped && !expanded && (
+        <button
+          onClick={() => setExpanded(true)}
+          className="text-green-600 text-sm font-medium mt-1 hover:text-green-700"
+        >
+          See more...
+        </button>
+      )}
+      {expanded && (
+        <button
+          onClick={() => setExpanded(false)}
+          className="text-green-600 text-sm font-medium mt-1 hover:text-green-700"
+        >
+          See less
+        </button>
+      )}
     </div>
   )
 }
@@ -590,7 +629,7 @@ export default function PlantProfile() {
         {/* Growing Instructions */}
         {plant.instructions && (
           <Section title="Growing Instructions">
-            <p className="text-gray-700 whitespace-pre-wrap">{plant.instructions}</p>
+            <CollapsibleText text={plant.instructions} />
           </Section>
         )}
 
@@ -898,7 +937,7 @@ export default function PlantProfile() {
                               )}
                             </div>
                             {entry.note && (
-                              <p className="text-gray-700 text-sm">{entry.note}</p>
+                              <CollapsibleText text={entry.note} className="text-gray-700 text-sm" />
                             )}
                             {photos.length > 0 && (
                               <div className="flex flex-wrap gap-2 mt-2">

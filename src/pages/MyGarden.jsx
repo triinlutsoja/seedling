@@ -39,7 +39,9 @@ function PlantCard({ plant, mainPhoto }) {
 
         <div className="flex-1 min-w-0">
           <h3 className="font-semibold text-gray-900 truncate">{plant.name}</h3>
-          <p className="text-sm text-gray-500 capitalize">{plant.lifecycle || 'Plant'}</p>
+          {plant.latinName && (
+            <p className="text-sm text-gray-500 italic truncate">{plant.latinName}</p>
+          )}
         </div>
 
         {/* Status indicator */}

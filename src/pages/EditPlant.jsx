@@ -109,6 +109,7 @@ export default function EditPlant() {
 
   // Form state
   const [name, setName] = useState('')
+  const [latinName, setLatinName] = useState('')
   const [lifecycle, setLifecycle] = useState('')
   const [sowingStart, setSowingStart] = useState('')
   const [sowingEnd, setSowingEnd] = useState('')
@@ -138,6 +139,7 @@ export default function EditPlant() {
       }
 
       setName(plant.name || '')
+      setLatinName(plant.latinName || '')
       setLifecycle(plant.lifecycle || '')
       setSowingStart(plant.sowingPeriod?.start?.toString() ?? '')
       setSowingEnd(plant.sowingPeriod?.end?.toString() ?? '')
@@ -191,6 +193,7 @@ export default function EditPlant() {
     try {
       await db.plants.update(parseInt(id), {
         name: name.trim(),
+        latinName: latinName.trim() || null,
         lifecycle: lifecycle || null,
         sowingPeriod: sowingStart !== '' ? {
           start: parseInt(sowingStart),
@@ -316,6 +319,13 @@ export default function EditPlant() {
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g., Cherry Tomatoes"
             required
+          />
+          <Input
+            label="Latin Name"
+            type="text"
+            value={latinName}
+            onChange={(e) => setLatinName(e.target.value)}
+            placeholder="e.g., Solanum lycopersicum"
           />
           <Select
             label="Plant Type"

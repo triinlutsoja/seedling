@@ -586,6 +586,9 @@ export default function PlantProfile() {
           </button>
           <div>
             <h1 className="text-2xl font-bold">{plant.name}</h1>
+            {plant.latinName && (
+              <p className="text-green-200 text-sm italic mt-0.5">{plant.latinName}</p>
+            )}
             <div className="flex items-center gap-2 mt-1">
               <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
                 plant.status === PlantStatus.ACTIVE
@@ -594,9 +597,6 @@ export default function PlantProfile() {
               }`}>
                 {plant.status === PlantStatus.ACTIVE ? 'Active' : 'Archived'}
               </span>
-              {plant.lifecycle && (
-                <span className="text-green-200 text-sm">{plant.lifecycle}</span>
-              )}
             </div>
           </div>
         </div>
@@ -607,10 +607,6 @@ export default function PlantProfile() {
         {/* General Info */}
         <Section title="General Info">
           <div className="space-y-3">
-            <div className="flex justify-between">
-              <span className="text-gray-500">Type</span>
-              <span className="text-gray-900">{plant.lifecycle || 'Not set'}</span>
-            </div>
             <div className="flex justify-between">
               <span className="text-gray-500">Sowing Period</span>
               <span className="text-gray-900">{formatPeriod(plant.sowingPeriod)}</span>

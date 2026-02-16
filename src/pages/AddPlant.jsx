@@ -105,6 +105,7 @@ export default function AddPlant() {
 
   // Form state
   const [name, setName] = useState('')
+  const [latinName, setLatinName] = useState('')
   const [lifecycle, setLifecycle] = useState('')
   const [sowingStart, setSowingStart] = useState('')
   const [sowingEnd, setSowingEnd] = useState('')
@@ -131,6 +132,7 @@ export default function AddPlant() {
     try {
       const plantId = await db.plants.add({
         name: name.trim(),
+        latinName: latinName.trim() || null,
         status: PlantStatus.ACTIVE,
         lifecycle: lifecycle || null,
         sowingPeriod: sowingStart !== '' ? {
@@ -174,6 +176,13 @@ export default function AddPlant() {
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g., Cherry Tomatoes"
             required
+          />
+          <Input
+            label="Latin Name"
+            type="text"
+            value={latinName}
+            onChange={(e) => setLatinName(e.target.value)}
+            placeholder="e.g., Solanum lycopersicum"
           />
           <Select
             label="Plant Type"

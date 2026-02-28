@@ -1,3 +1,4 @@
+import { useState, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { format, isToday, isTomorrow, isPast } from 'date-fns'
 
@@ -10,6 +11,10 @@ function CheckIcon() {
 }
 
 export default function TaskCard({ task, plants, onComplete, onEdit, onSnooze, showPlantLinks = true }) {
+  const [isLongPressing, setIsLongPressing] = useState(false)
+  const longPressTimer = useRef(null)
+  const longPressTriggered = useRef(false)
+
   const date = new Date(task.date)
 
   // Check if overdue: either date is past, or if time is set, check if datetime is past
@@ -32,10 +37,39 @@ export default function TaskCard({ task, plants, onComplete, onEdit, onSnooze, s
     .filter(Boolean)
   const allPlants = [...linkedPlants, ...completedPlants]
 
-  function handleCardClick(e) {
-    // Don't trigger edit when clicking checkbox or snooze button
+  function startLongPress(e) {
     if (e.target.closest('button') || e.target.closest('a')) return
-    onEdit?.(task)
+    e.currentTarget.releasePointerCapture(e.pointerId)
+    longPressTriggered.current = false
+    setIsLongPressing(true)
+    longPressTimer.current = setTimeout(() => {
+      longPressTriggered.current = true
+      // Don't open modal here — wait for pointerup so modal never opens mid-gesture
+    }, 500)
+  }
+
+  function endLongPress() {
+    clearTimeout(longPressTimer.current)
+    longPressTimer.current = null
+    setIsLongPressing(false)
+    if (longPressTriggered.current) {
+      onEdit?.(task)
+    }
+  }
+
+  function cancelLongPress() {
+    clearTimeout(longPressTimer.current)
+    longPressTimer.current = null
+    longPressTriggered.current = false
+    setIsLongPressing(false)
+  }
+
+  function handleCardClick(e) {
+    if (longPressTriggered.current) {
+      e.preventDefault()
+      e.stopPropagation()
+      longPressTriggered.current = false
+    }
   }
 
   function handleCheckboxClick(e) {
@@ -45,8 +79,13 @@ export default function TaskCard({ task, plants, onComplete, onEdit, onSnooze, s
 
   return (
     <div
-      className={`bg-white rounded-xl p-4 shadow-sm border ${isOverdue ? 'border-red-200' : 'border-gray-100'} ${onEdit ? 'cursor-pointer active:bg-gray-50' : ''}`}
+      className={`bg-white rounded-xl p-4 shadow-sm border select-none transition-opacity duration-150 ${isOverdue ? 'border-red-200' : 'border-gray-100'} ${onEdit && isLongPressing ? 'opacity-60' : ''}`}
+      onPointerDown={onEdit ? startLongPress : undefined}
+      onPointerUp={onEdit ? endLongPress : undefined}
+      onPointerCancel={onEdit ? cancelLongPress : undefined}
+      onPointerLeave={onEdit ? cancelLongPress : undefined}
       onClick={handleCardClick}
+      onContextMenu={onEdit ? (e) => e.preventDefault() : undefined}
     >
       <div className="flex items-start gap-3">
         {/* Checkbox */}

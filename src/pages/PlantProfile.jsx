@@ -3,9 +3,11 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import { db, PlantStatus, CareStages, Months } from '../db/database'
 import { format, isToday, isPast } from 'date-fns'
 import PhotoGallery from '../components/PhotoGallery'
+import PhotoViewer from '../components/PhotoViewer'
 import TaskFormModal from '../components/TaskFormModal'
 import CompanionFormModal from '../components/CompanionFormModal'
 import DiaryEntryEditModal from '../components/DiaryEntryEditModal'
+import Toast from '../components/Toast'
 import { scheduleNotification, cancelNotification } from '../utils/notifications'
 
 function BackButton({ onClick }) {
@@ -130,6 +132,16 @@ export default function PlantProfile() {
   const [editingDiaryEntryId, setEditingDiaryEntryId] = useState(null)
   const [diaryEntryModalOpen, setDiaryEntryModalOpen] = useState(false)
   const [editingDiaryEntry, setEditingDiaryEntry] = useState(null)
+  const [toast, setToast] = useState(null)
+  const [longPressingId, setLongPressingId] = useState(null)
+  const longPressTimer = useRef(null)
+  const longPressTriggered = useRef(false)
+  const [longPressingTaskId, setLongPressingTaskId] = useState(null)
+  const taskLongPressTimer = useRef(null)
+  const taskLongPressTriggered = useRef(false)
+  const pendingEditEntryRef = useRef(null)
+  const pendingEditTaskRef = useRef(null)
+  const [viewingPhotoData, setViewingPhotoData] = useState(null)
 
   // Companion plants state
   const [companionMode, setCompanionMode] = useState('helpedBy')
@@ -394,20 +406,117 @@ export default function PlantProfile() {
   }
 
   async function handleDiaryEntryClick(entry) {
-    if (entry.careStage !== 'task_completed' || !entry.taskId) return
-    try {
+    if (entry.careStage === 'task_completed' && entry.taskId) {
       const task = await db.tasks.get(entry.taskId)
-      if (!task) {
-        // Task was deleted - open diary entry edit modal instead
-        setEditingDiaryEntry(entry)
-        setDiaryEntryModalOpen(true)
+      if (task) {
+        // Open task modal with "Restore Task" option
+        setEditingDiaryEntryId(entry.id)
+        setEditingTask(task)
+        setTaskModalOpen(true)
         return
       }
-      setEditingTask(task)
-      setEditingDiaryEntryId(entry.id)
-      setTaskModalOpen(true)
+    }
+    setEditingDiaryEntry(entry)
+    setDiaryEntryModalOpen(true)
+  }
+
+  function startDiaryLongPress(e, entry) {
+    // Don't start long-press when touching interactive child elements
+    if (e.target.closest('button') || e.target.tagName === 'IMG') return
+    e.currentTarget.releasePointerCapture(e.pointerId)
+    pendingEditEntryRef.current = entry
+    longPressTriggered.current = false
+    setLongPressingId(entry.id)
+    longPressTimer.current = setTimeout(() => {
+      longPressTriggered.current = true
+      // Don't open modal here — wait for pointerup so modal never opens mid-gesture
+    }, 500)
+  }
+
+  function endDiaryLongPress() {
+    clearTimeout(longPressTimer.current)
+    longPressTimer.current = null
+    setLongPressingId(null)
+    if (longPressTriggered.current && pendingEditEntryRef.current) {
+      handleDiaryEntryClick(pendingEditEntryRef.current)
+    }
+    pendingEditEntryRef.current = null
+  }
+
+  function cancelDiaryLongPress() {
+    clearTimeout(longPressTimer.current)
+    longPressTimer.current = null
+    longPressTriggered.current = false
+    pendingEditEntryRef.current = null
+    setLongPressingId(null)
+  }
+
+  function handleDiaryCardClick(e) {
+    // Suppress the click event that fires after a completed long-press
+    if (longPressTriggered.current) {
+      e.preventDefault()
+      e.stopPropagation()
+      longPressTriggered.current = false
+    }
+  }
+
+  function startTaskLongPress(e, task) {
+    if (e.target.closest('button')) return
+    e.currentTarget.releasePointerCapture(e.pointerId)
+    pendingEditTaskRef.current = task
+    taskLongPressTriggered.current = false
+    setLongPressingTaskId(task.id)
+    taskLongPressTimer.current = setTimeout(() => {
+      taskLongPressTriggered.current = true
+      // Don't open modal here — wait for pointerup so modal never opens mid-gesture
+    }, 500)
+  }
+
+  function endTaskLongPress() {
+    clearTimeout(taskLongPressTimer.current)
+    taskLongPressTimer.current = null
+    setLongPressingTaskId(null)
+    if (taskLongPressTriggered.current && pendingEditTaskRef.current) {
+      handleEditTask(pendingEditTaskRef.current)
+    }
+    pendingEditTaskRef.current = null
+  }
+
+  function cancelTaskLongPress() {
+    clearTimeout(taskLongPressTimer.current)
+    taskLongPressTimer.current = null
+    taskLongPressTriggered.current = false
+    pendingEditTaskRef.current = null
+    setLongPressingTaskId(null)
+  }
+
+  function handleTaskCardClick(e) {
+    if (taskLongPressTriggered.current) {
+      e.preventDefault()
+      e.stopPropagation()
+      taskLongPressTriggered.current = false
+    }
+  }
+
+  function openDiaryPhotoViewer(photos, index, entryDate) {
+    setViewingPhotoData({ photos, index, entryDate })
+  }
+
+  async function handleSetDiaryPhotoAsMain(photoId) {
+    try {
+      const existingMains = await db.photos
+        .where('plantId')
+        .equals(parseInt(id))
+        .filter(p => p.isMainPhoto === true)
+        .toArray()
+      for (const p of existingMains) {
+        await db.photos.update(p.id, { isMainPhoto: false })
+      }
+      await db.photos.update(photoId, { isMainPhoto: true })
+      setViewingPhotoData(null)
+      await loadPlant()
     } catch (error) {
-      console.error('Error loading task from diary entry:', error)
+      console.error('Error setting main photo:', error)
     }
   }
 
@@ -454,10 +563,27 @@ export default function PlantProfile() {
     setEditingDiaryEntry(null)
   }
 
-  async function handleSaveDiaryEntry(entryId, note) {
+  async function handleSaveDiaryEntry(entryId, { date, careStage, note, photosToRemove, newPhotos }) {
     try {
-      await db.diaryEntries.update(entryId, { note })
+      await db.diaryEntries.update(entryId, {
+        date,
+        careStage: careStage || null,
+        note: note || null,
+        year: new Date(date).getFullYear()
+      })
+      for (const photoId of photosToRemove) {
+        await db.photos.delete(photoId)
+      }
+      for (const dataUrl of newPhotos) {
+        await db.photos.add({
+          plantId: parseInt(id),
+          diaryEntryId: entryId,
+          dataUrl,
+          createdAt: new Date().toISOString()
+        })
+      }
       await loadPlant()
+      setToast('Diary entry saved')
     } catch (error) {
       console.error('Error saving diary entry:', error)
       throw error
@@ -466,10 +592,10 @@ export default function PlantProfile() {
 
   async function handleDeleteDiaryEntry(entryId) {
     try {
-      // Delete any photos associated with this diary entry
       await db.photos.where('diaryEntryId').equals(entryId).delete()
       await db.diaryEntries.delete(entryId)
       await loadPlant()
+      setToast('Diary entry deleted')
     } catch (error) {
       console.error('Error deleting diary entry:', error)
       throw error
@@ -773,8 +899,13 @@ export default function PlantProfile() {
                   return (
                     <div
                       key={task.id}
-                      className={`flex items-start gap-3 p-3 rounded-lg cursor-pointer active:bg-gray-100 ${isOverdue ? 'bg-red-50' : 'bg-gray-50'}`}
-                      onClick={() => handleEditTask(task)}
+                      className={`flex items-start gap-3 p-3 rounded-lg select-none transition-opacity duration-150 ${longPressingTaskId === task.id ? 'opacity-60' : ''} ${isOverdue ? 'bg-red-50' : 'bg-gray-50'}`}
+                      onPointerDown={(e) => startTaskLongPress(e, task)}
+                      onPointerUp={endTaskLongPress}
+                      onPointerCancel={cancelTaskLongPress}
+                      onPointerLeave={cancelTaskLongPress}
+                      onClick={handleTaskCardClick}
+                      onContextMenu={(e) => e.preventDefault()}
                     >
                       <button
                         onClick={(e) => {
@@ -911,12 +1042,16 @@ export default function PlantProfile() {
                       {entriesByYear[year].map(entry => {
                         const stage = CareStages.find(s => s.id === entry.careStage)
                         const photos = entryPhotos[entry.id] || []
-                        const isClickable = entry.careStage === 'task_completed' && entry.taskId
                         return (
                           <div
                             key={entry.id}
-                            className={`p-3 bg-gray-50 rounded-lg ${isClickable ? 'cursor-pointer active:bg-gray-100' : ''}`}
-                            onClick={isClickable ? () => handleDiaryEntryClick(entry) : undefined}
+                            className={`p-3 rounded-lg select-none transition-opacity duration-150 ${longPressingId === entry.id ? 'bg-gray-100 opacity-60' : 'bg-gray-50'}`}
+                            onPointerDown={(e) => startDiaryLongPress(e, entry)}
+                            onPointerUp={endDiaryLongPress}
+                            onPointerCancel={cancelDiaryLongPress}
+                            onPointerLeave={cancelDiaryLongPress}
+                            onClick={handleDiaryCardClick}
+                            onContextMenu={(e) => e.preventDefault()}
                           >
                             <div className="flex items-center gap-2 mb-1">
                               <span className="text-xs text-gray-500">
@@ -937,13 +1072,22 @@ export default function PlantProfile() {
                             )}
                             {photos.length > 0 && (
                               <div className="flex flex-wrap gap-2 mt-2">
-                                {photos.map(photo => (
-                                  <img
+                                {photos.map((photo, photoIndex) => (
+                                  <button
                                     key={photo.id}
-                                    src={photo.dataUrl}
-                                    alt=""
-                                    className="w-16 h-16 object-cover rounded-lg"
-                                  />
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      openDiaryPhotoViewer(photos, photoIndex, entry.date)
+                                    }}
+                                    className="w-16 h-16 rounded-lg overflow-hidden flex-shrink-0"
+                                  >
+                                    <img
+                                      src={photo.dataUrl}
+                                      alt=""
+                                      className="w-full h-full object-cover"
+                                    />
+                                  </button>
                                 ))}
                               </div>
                             )}
@@ -993,14 +1137,38 @@ export default function PlantProfile() {
         existingCompanionIds={companionsHelpedBy.map(c => c.companionPlantId)}
       />
 
-      {/* Diary Entry Edit Modal (for orphaned entries) */}
+      {/* Diary Entry Edit Modal */}
       <DiaryEntryEditModal
         isOpen={diaryEntryModalOpen}
         onClose={handleCloseDiaryEntryModal}
         onSave={handleSaveDiaryEntry}
         onDelete={handleDeleteDiaryEntry}
         entry={editingDiaryEntry}
+        existingPhotos={editingDiaryEntry ? (entryPhotos[editingDiaryEntry.id] || []) : []}
       />
+
+      {/* Diary photo viewer */}
+      {viewingPhotoData && (
+        <PhotoViewer
+          photo={viewingPhotoData.photos[viewingPhotoData.index]}
+          label={new Date(viewingPhotoData.entryDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+          isMainPhoto={viewingPhotoData.photos[viewingPhotoData.index].isMainPhoto}
+          onClose={() => setViewingPhotoData(null)}
+          onSetMainPhoto={() => handleSetDiaryPhotoAsMain(viewingPhotoData.photos[viewingPhotoData.index].id)}
+          onNext={() => setViewingPhotoData(prev => ({ ...prev, index: prev.index + 1 }))}
+          onPrev={() => setViewingPhotoData(prev => ({ ...prev, index: prev.index - 1 }))}
+          hasNext={viewingPhotoData.index < viewingPhotoData.photos.length - 1}
+          hasPrev={viewingPhotoData.index > 0}
+        />
+      )}
+
+      {/* Toast notification */}
+      {toast && (
+        <Toast
+          message={toast}
+          onDismiss={() => setToast(null)}
+        />
+      )}
     </div>
   )
 }

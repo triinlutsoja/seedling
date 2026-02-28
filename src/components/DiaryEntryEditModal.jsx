@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import DeleteConfirmModal from './DeleteConfirmModal'
+import { CareStages } from '../db/database'
 
 function XIcon() {
   return (
@@ -22,26 +23,59 @@ export default function DiaryEntryEditModal({
   onClose,
   onSave,
   onDelete,
-  entry
+  entry,
+  existingPhotos = []
 }) {
+  const [date, setDate] = useState('')
+  const [careStage, setCareStage] = useState('')
   const [note, setNote] = useState('')
+  const [photosToRemove, setPhotosToRemove] = useState([])
+  const [newPhotos, setNewPhotos] = useState([])
   const [saving, setSaving] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
     if (isOpen && entry) {
+      setDate(entry.date || new Date().toISOString().split('T')[0])
+      setCareStage(entry.careStage || '')
       setNote(entry.note || '')
+      setPhotosToRemove([])
+      setNewPhotos([])
     }
   }, [isOpen, entry])
 
+  function handlePhotoSelect(e) {
+    const files = Array.from(e.target.files)
+    files.forEach(file => {
+      const reader = new FileReader()
+      reader.onload = (event) => {
+        setNewPhotos(prev => [...prev, event.target.result])
+      }
+      reader.readAsDataURL(file)
+    })
+    e.target.value = ''
+  }
+
+  function removeExistingPhoto(photoId) {
+    setPhotosToRemove(prev => [...prev, photoId])
+  }
+
+  function removeNewPhoto(index) {
+    setNewPhotos(prev => prev.filter((_, i) => i !== index))
+  }
+
   async function handleSubmit(e) {
     e.preventDefault()
-    if (!note.trim()) return
-
     setSaving(true)
     try {
-      await onSave(entry.id, note.trim())
+      await onSave(entry.id, {
+        date,
+        careStage: careStage || null,
+        note: note.trim() || null,
+        photosToRemove,
+        newPhotos
+      })
       onClose()
     } catch (error) {
       console.error('Error saving diary entry:', error)
@@ -51,7 +85,6 @@ export default function DiaryEntryEditModal({
 
   async function handleDeleteConfirm() {
     if (!entry?.id) return
-
     setDeleting(true)
     try {
       await onDelete(entry.id)
@@ -64,6 +97,9 @@ export default function DiaryEntryEditModal({
   }
 
   if (!isOpen) return null
+
+  const isTaskCompleted = entry?.careStage === 'task_completed'
+  const keptPhotos = existingPhotos.filter(p => !photosToRemove.includes(p.id))
 
   return (
     <>
@@ -91,27 +127,99 @@ export default function DiaryEntryEditModal({
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="p-4 space-y-4">
-            {/* Info about orphaned entry */}
-            <div className="bg-blue-50 border border-blue-100 rounded-lg p-3">
-              <p className="text-sm text-blue-700">
-                This diary entry was linked to a task that has been deleted. You can edit the note or delete this entry.
-              </p>
+            {/* Info for task_completed entries */}
+            {isTaskCompleted && (
+              <div className="bg-blue-50 border border-blue-100 rounded-lg p-3">
+                <p className="text-sm text-blue-700">
+                  This entry was created by completing a task. Editing it here won't affect the original task.
+                </p>
+              </div>
+            )}
+
+            {/* Date */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+              <input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white"
+              />
             </div>
+
+            {/* Care Stage (not shown for task_completed entries) */}
+            {!isTaskCompleted && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Care Stage (optional)</label>
+                <select
+                  value={careStage}
+                  onChange={(e) => setCareStage(e.target.value)}
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white"
+                >
+                  <option value="">General note</option>
+                  {CareStages.filter(s => s.id !== 'task_completed').map(stage => (
+                    <option key={stage.id} value={stage.id}>{stage.label}</option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             {/* Note */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Note <span className="text-red-500">*</span>
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Note (optional)</label>
               <textarea
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
-                placeholder="Enter note..."
+                placeholder="Add notes about this entry..."
                 className="w-full px-3 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 resize-none"
                 rows={3}
-                required
                 autoFocus
               />
+            </div>
+
+            {/* Photos */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Photos</label>
+              <div className="flex flex-wrap gap-2">
+                {keptPhotos.map(photo => (
+                  <div key={photo.id} className="relative w-16 h-16">
+                    <img src={photo.dataUrl} alt="" className="w-full h-full object-cover rounded-lg" />
+                    <button
+                      type="button"
+                      onClick={() => removeExistingPhoto(photo.id)}
+                      className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center text-xs"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+                {newPhotos.map((photo, index) => (
+                  <div key={`new-${index}`} className="relative w-16 h-16">
+                    <img src={photo} alt="" className="w-full h-full object-cover rounded-lg" />
+                    <button
+                      type="button"
+                      onClick={() => removeNewPhoto(index)}
+                      className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center text-xs"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+                <label className="w-16 h-16 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center cursor-pointer hover:border-green-500 hover:bg-green-50 transition-colors">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    onChange={handlePhotoSelect}
+                    className="hidden"
+                    multiple
+                  />
+                  <svg className="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                </label>
+              </div>
             </div>
 
             {/* Actions */}
@@ -133,7 +241,7 @@ export default function DiaryEntryEditModal({
               </button>
               <button
                 type="submit"
-                disabled={saving || !note.trim()}
+                disabled={saving}
                 className="px-6 py-2.5 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {saving ? 'Saving...' : 'Save'}
@@ -148,8 +256,8 @@ export default function DiaryEntryEditModal({
         isOpen={showDeleteModal}
         onClose={() => setShowDeleteModal(false)}
         onConfirm={handleDeleteConfirm}
-        title="Delete Diary Entry?"
-        message="Are you sure you want to delete this diary entry? This action cannot be undone."
+        title="Delete this diary entry?"
+        message="This cannot be undone."
         confirmText="Delete Entry"
         isDeleting={deleting}
       />
